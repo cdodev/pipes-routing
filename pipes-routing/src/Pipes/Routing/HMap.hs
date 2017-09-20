@@ -31,13 +31,13 @@ import           Pipes.Concurrent
 import           Pipes.Routing.Types
 import           Servant.API
 
-data SomeVal = forall a. Typeable a => I (Input a)
-newtype RouteMap (a :: [*]) = Routes { unRoutes :: Map Text SomeVal }
+data SomeVal f = forall a. Typeable a => I (f a)
+newtype RouteMap (f :: * -> *) (a :: [*]) = Routes { unRoutes :: Map Text (SomeVal f) }
 
-emptyRoutes :: RouteMap '[]
+emptyRoutes :: RouteMap f '[]
 emptyRoutes = Routes Map.empty
 
-getInbox :: Typeable a => SomeVal -> Maybe (Input a)
+getInbox :: (Typeable a, Typeable f) => SomeVal f -> Maybe (f a)
 getInbox (I i) = cast i
 
 type family RouteElem (r :: *) (routes :: [*]) :: Constraint where
@@ -47,14 +47,17 @@ type family RouteElem (r :: *) (routes :: [*]) :: Constraint where
 
 insert
   :: (KnownSymbol k, Typeable i, ChannelType k api ~ i)
-  => Proxy api -> Proxy k -> Input i -> RouteMap routes -> RouteMap ((k :> i) ': routes)
+  => Proxy api -> Proxy k -> f i -> RouteMap f routes -> RouteMap f ((k :> i) ': routes)
 insert _ pKey i = Routes . Map.insert k (I i) . unRoutes
   where
     k = (symbolVal pKey) ^. packed
 
 extract
-  :: (KnownSymbol k, Typeable i, ChannelType k api ~ i, RouteElem (k :> i) routes)
-  => Proxy api -> Proxy k -> RouteMap routes -> Input i
+  :: ( KnownSymbol k, Typeable i, Typeable f
+     , ChannelType k api ~ i
+     , RouteElem (k :> i) routes
+     )
+  => Proxy api -> Proxy k -> RouteMap f routes -> f i
 extract _ pKey (Routes m) = fromJust $ Map.lookup k m >>= getInbox
   where
     k = (symbolVal pKey) ^. packed
