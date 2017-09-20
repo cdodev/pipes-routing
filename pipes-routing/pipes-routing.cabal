@@ -16,6 +16,7 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Pipes.Routing.Types
+                       Pipes.Routing.Publisher
                        Pipes.Routing.HMap
                        Pipes.Routing
   build-depends:       base >= 4.7 && < 5
