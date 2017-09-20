@@ -63,10 +63,10 @@ type InputEvents =
 
 
 --------------------------------------------------------------------------------
-suiteStartClient :: Sock String
-intClient :: Sock Int
+suiteStartClient :: Publisher String
+intClient :: Publisher Int
 
-suiteStartClient :<|> intClient = publishClient (Proxy :: Proxy InputEvents)
+suiteStartClient :<|> intClient = publishClient (Proxy :: Proxy Debug) (Proxy :: Proxy InputEvents)
 
 --------------------------------------------------------------------------------
 
@@ -149,11 +149,6 @@ processor =
 --   HasChan (ChanName c) a = HasChan c a
 --   HasChan c (a :<|> b) = Or (HasChan c a) (HasChan c b)
 
-
-type family ChannelType (chan :: k) api :: * where
-  ChannelType c (c :> a) = a
-  ChannelType c ((c :> a) :<|> _) = a
-  ChannelType c (_ :<|> a) = ChannelType c a
 
 --------------------------------------------------------------------------------
 getT :: Proxy api -> proxy a -> TC (ChannelType a api)
