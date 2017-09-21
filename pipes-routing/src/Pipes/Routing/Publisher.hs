@@ -37,8 +37,13 @@ import           Pipes                hiding (Proxy)
 import qualified Pipes                as P
 import           Pipes.Concurrent
 import           Servant
+import Control.Monad.IO.Class (liftIO, MonadIO)
+import Control.Monad.Indexed.State (IxMonadState(..), IxStateT(..))
+import Control.Monad.Indexed.Trans (ilift)
 
 import Pipes.Routing.Types
+import Pipes.Routing.HMap
+import Pipes.Routing.Operations hiding (return, (=<<), (>>=), (>>))
 
 
 newtype Sock a =
@@ -71,21 +76,29 @@ data Debug
 data Err deriving Generic
 
 -- instance Error Err
+-- runChans :: (IxMonadState m, MonadIO (m i i)) => Proxy routes -> m i j a
+-- runChans pRoutes = do
+--   liftIO $ mkChannels pRoutes
 
 class HasPublisher api context where
   type PublisherT api (m :: * -> *) :: *
-  publishClient :: Proxy context -> Proxy api -> Publisher api
+  publishClient :: Proxy context -> Proxy api -> InputOutput i -> Publisher api i
 
-type Publisher api = PublisherT api Sock
+type Publisher api i = PublisherT api (RouteBuild api i)
+-- type Publisher api i = PublisherT api (ExceptT Err IO)
 
 instance (HasPublisher a context, HasPublisher b context) => HasPublisher (a :<|> b) context where
   type PublisherT (a :<|> b) m = PublisherT a m :<|> PublisherT b m
-  publishClient pc (Proxy :: Proxy (a :<|> b)) =
-    publishClient pc (Proxy :: Proxy a) :<|> publishClient pc (Proxy :: Proxy b)
+  publishClient _pc (Proxy :: Proxy (a :<|> b)) i = _ -- do
+    -- left <- publishClient pc (Proxy :: Proxy a) i
+    -- right <- publishClient pc (Proxy :: Proxy b) _
+    -- return left :<|> right
 
-
-instance (KnownSymbol name, Show a) => HasPublisher (name :> a) Debug where
-  type PublisherT (name :> a) (m :: * -> *) = Sock a
-  publishClient pc (Proxy :: Proxy (name :> a)) = undefined
+instance (Typeable a, Channels (name :> a), KnownSymbol name, Show a) => HasPublisher (name :> a) Debug where
+  type PublisherT (name :> a) (m :: * -> *) = IO (Sock a)
+  publishClient _pc pApi i = do
+    nextState <- execIxStateT (mkChannels pApi) i
+    let o = nextState ^. outRoutes . to (extract pApi pName)
+    return $ Sock o
     -- mkSock (symbolVal (Proxy :: Proxy name))
-    where pc = Proxy :: Proxy context
+    where pName = Proxy :: Proxy name

@@ -1,6 +1,6 @@
-{ mkDerivation, base, lens, lifted-base, monad-control, pipes
-, pipes-concurrency, servant, servant-client, servant-server
-, singletons, stdenv
+{ mkDerivation, base, bifunctors, containers, indexed, lens
+, lifted-base, monad-control, mtl, pipes, pipes-concurrency
+, servant, servant-client, servant-server, singletons, stdenv, text
 }:
 mkDerivation {
   pname = "pipes-routing";
@@ -9,8 +9,9 @@ mkDerivation {
   isLibrary = true;
   isExecutable = true;
   libraryHaskellDepends = [
-    base lens lifted-base monad-control pipes pipes-concurrency servant
-    servant-client servant-server singletons
+    base bifunctors containers indexed lens lifted-base monad-control
+    mtl pipes pipes-concurrency servant servant-client servant-server
+    singletons text
   ];
   executableHaskellDepends = [ base ];
   testHaskellDepends = [ base ];

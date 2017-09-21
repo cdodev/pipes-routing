@@ -62,3 +62,6 @@ type family ChannelType (chan :: k) api :: * where
   ChannelType c ((c :> a) :<|> _) = a
   ChannelType c (_ :<|> a) = ChannelType c a
 
+type family ChannelList (api :: *) :: [*] where
+  ChannelList (c :> a) = '[c :> a]
+  ChannelList (c :> a :<|> rest) = c :> a ': (ChannelList rest)
