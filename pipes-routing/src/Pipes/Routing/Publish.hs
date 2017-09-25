@@ -18,7 +18,7 @@
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wall #-}
-module Pipes.Routing.Publisher where
+module Pipes.Routing.Publish where
 
 import           Control.Lens
 import           Control.Monad.Except
@@ -69,9 +69,7 @@ runSock :: Sock a -> a -> STM Bool
 runSock (Sock o) = send o
 
 ---------------------------------------------------------------------------------
-newtype PublishM a r = PublishM { unPublishM :: Consumer a IO r } deriving (Functor, Applicative, Monad)
 
-data Debug
 
 data Err deriving Generic
 
@@ -80,25 +78,60 @@ data Err deriving Generic
 -- runChans pRoutes = do
 --   liftIO $ mkChannels pRoutes
 
+
+class PublishClient a where
+  type Client a :: *
+  type RouteState a :: [*]
+  mkClient :: a -> Client a
+  mkState :: a -> IO (InputOutput (RouteState a))
+
+instance PublishClient (IO (Output a, InputOutput r)) where
+  type Client (IO (Output a, InputOutput r)) = a -> IO ()
+  type RouteState (IO (Output a, InputOutput r)) = r
+  mkClient = undefined
+  mkState = undefined
+
+instance (PublishClient a, PublishClient b) => PublishClient (a :<|> b) where
+  type Client (a :<|> b) = Client a :<|> Client b
+  type RouteState (a :<|> b) = MergedRoutes (RouteState a) (RouteState b)
+  mkClient (a :<|> b) = undefined
+  mkState (a :<|> b) = undefined
+
+--------------------------------------------------------------------------------
 class HasPublisher api context where
   type PublisherT api (m :: * -> *) :: *
-  publishClient :: Proxy context -> Proxy api -> InputOutput i -> Publisher api i
+  publishClient :: Proxy context -> Proxy api -> Publisher api
 
-type Publisher api i = PublisherT api (RouteBuild api i)
+
+type Publisher api = PublisherT api IO --(RouteBuild api r)
 -- type Publisher api i = PublisherT api (ExceptT Err IO)
+
+data Debug
+
 
 instance (HasPublisher a context, HasPublisher b context) => HasPublisher (a :<|> b) context where
   type PublisherT (a :<|> b) m = PublisherT a m :<|> PublisherT b m
-  publishClient _pc (Proxy :: Proxy (a :<|> b)) i = _ -- do
-    -- left <- publishClient pc (Proxy :: Proxy a) i
-    -- right <- publishClient pc (Proxy :: Proxy b) _
-    -- return left :<|> right
+  --   RouteBuild (a :<|> b) r (IxOutput (PublisherT (Chans b r) a m) :<|> IxOutput (PublisherT r b m))
+  publishClient pc (Proxy :: Proxy (a :<|> b)) =
+    publishClient pc pA :<|> publishClient pc pB
+      where
+        pA = Proxy :: Proxy a
+        pB = Proxy :: Proxy b
 
 instance (Typeable a, Channels (name :> a), KnownSymbol name, Show a) => HasPublisher (name :> a) Debug where
-  type PublisherT (name :> a) (m :: * -> *) = IO (Sock a)
-  publishClient _pc pApi i = do
-    nextState <- execIxStateT (mkChannels pApi) i
-    let o = nextState ^. outRoutes . to (extract pApi pName)
-    return $ Sock o
-    -- mkSock (symbolVal (Proxy :: Proxy name))
-    where pName = Proxy :: Proxy name
+  type PublisherT (name :> a) (m :: * -> *) = IO (Output a, Input a, STM ())
+  publishClient _pc _pApi = do
+       (out, inp, seal) <- spawn' unbounded
+       return (out, inp, seal)
+
+
+-- mPub
+--   :: (HasPublisher a pc, HasPublisher b pc)
+--   => Proxy pc -> Proxy (a :<|> b) -> RouteBuild (a :<|> b) r (Output a, Output b)
+-- mPub pc (Proxy :: Proxy (a :<|> b)) = do
+--   right <- publishClient pc pB
+--   left <-  publishClient pc pA
+--   return $ left :<|> right
+--     where
+--       pA = Proxy :: Proxy a
+--       pB = Proxy :: Proxy b

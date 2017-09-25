@@ -16,7 +16,9 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Pipes.Routing.Types
-                       Pipes.Routing.Publisher
+                       Pipes.Routing.Publish
+                       Pipes.Routing.Process
+                       Pipes.Routing.Ingest
                        Pipes.Routing.Operations
                        Pipes.Routing.HMap
                        Pipes.Routing

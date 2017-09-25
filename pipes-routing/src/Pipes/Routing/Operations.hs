@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -21,6 +22,7 @@ import Control.Monad.Indexed
 import Control.Monad.Indexed.Trans (ilift)
 
 import Pipes.Routing.HMap
+import Pipes.Routing.Types
 
 
 return :: (Monad m) => a -> IxStateT m si si a
@@ -43,6 +45,8 @@ v >> w = v >>= \_ -> w
 execIxStateT :: Functor f => IxStateT f i j a -> i -> f j
 execIxStateT m i = snd <$> runIxStateT m i
 
+runIx = flip runIxStateT
+
 data InputOutput chans = InOut {
     _inRoutes :: RouteMap Input chans
   , _outRoutes :: RouteMap Output chans
@@ -51,13 +55,18 @@ data InputOutput chans = InOut {
 emptyInputOutput :: InputOutput '[]
 emptyInputOutput = InOut emptyRoutes emptyRoutes
 
+
+mergeInOut :: InputOutput a -> InputOutput b -> InputOutput (MergedRoutes a b)
+mergeInOut (InOut ia oa) (InOut ib ob) = InOut (mergeRoutes ia ib) (mergeRoutes oa ob)
+
 makeLenses ''InputOutput
 
-type RouteBuild api i = IxStateT IO (InputOutput i) (InputOutput (Chans api i))
+
+type RouteBuild api (i :: [*]) = IxStateT IO (InputOutput i) (InputOutput (Chans api i))
 
 class Channels api where
   type Chans api (i :: [*]) :: [*]
-  mkChannels :: Proxy api -> RouteBuild api i ()
+  mkChannels :: Proxy api -> RouteBuild api i (Output (Chan api))
 
 
 instance (KnownSymbol chan, Typeable a, Chan (chan :> a) ~ ty) => Channels (chan :> a) where
@@ -68,4 +77,6 @@ instance (KnownSymbol chan, Typeable a, Chan (chan :> a) ~ ty) => Channels (chan
     let inp' = insert pApi pK inp $ routes ^. inRoutes
         out' = insert pApi pK out $ routes ^. outRoutes
     iput $ InOut inp' out'
+    return out
     where pK = Proxy :: Proxy chan
+
