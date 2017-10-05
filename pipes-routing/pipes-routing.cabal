@@ -33,11 +33,13 @@ library
                      , mtl
                      , lens
                      , lifted-base
+                     , pipes-zeromq4
                      , servant
                      , servant-server
                      , servant-client
                      , singletons
                      , text
+                     , zeromq4-haskell
   default-language:    Haskell2010
   Extensions:
      UndecidableInstances,

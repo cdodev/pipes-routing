@@ -34,24 +34,9 @@ import           Servant.API
 
 
 import           Pipes.Routing.Types
+import           Pipes.Routing.Publish
 
 
-
---------------------------------------------------------------------------------
-
---------------------------------------------------------------------------------
-type Processor =
-       ("suite-start" :<+> "num")
-         :-> "ss-num" :> Either String Int
-  :<|> "num"
-         :-> "show-num" :> String
-
-type INum = "num" :> Int
-type PNum = "num" :-> String
-
-type family PublishChannels processor :: * where
-  PublishChannels (a :-> (chan :: Symbol) :> a) = chan :> a
-  PublishChannels (a :<|> b) = (PublishChannels a) :<|> (PublishChannels b)
 
 --------------------------------------------------------------------------------
 type family ProcessInputs (api :: *) (chanName :: k) (m :: * -> *) :: * where
@@ -62,8 +47,10 @@ type family ProcessInputs (api :: *) (chanName :: k) (m :: * -> *) :: * where
 --------------------------------------------------------------------------------
 class HasProcessor (api :: *) processor where
   type ProcessorT api processor (m :: * -> *) :: *
-  server :: Proxy api -> Proxy processor -> ProcessorM api processor
+  server :: Proxy api -> Proxy processor -> Processor api processor
   -- process ::
+
+type Processor api processor = ProcessorT api processor P
 
 instance (KnownSymbol chan) => HasProcessor api (l :-> chan :> (out :: *)) where
   type ProcessorT api (l :-> chan :> out) m =
@@ -84,7 +71,6 @@ instance HasProcessor api (l :<|> r) where
 --------------------------------------------------------------------------------
 type P = IO
 
-type ProcessorM api processor = ProcessorT api processor P
 
 data Merge a m b = Merge {
     _mergePrism    :: Prism' b a
@@ -105,6 +91,17 @@ mergeProd (Merge ap as) (Merge bp bs) = do
   _ <- fork $ runEffect $ bs >-> toOutput (contramap (view $ re bp) bo)
   return (fromInput $ ai <> bi, seala >> sealb)
 
+--------------------------------------------------------------------------------
+type P1 = ("suite-start" :<+> "num") :-> ("ss-num" :> Either String Int)
+type P2 = "num" :-> ("show-num" :> String)
+
+type ProcessorAPI = P1 :<|> P2
+
+type INum = "num" :> Int
+type PNum = "num" :-> String
+
+--------------------------------------------------------------------------------
+
 ssOrNum
   :: (Producer String P (), Producer Int P ())
   -> P (Producer (Either String Int) P (), STM ())
@@ -122,8 +119,10 @@ type InputEvents =
 
 -- p :: ProcessorT INum PNum IO
 -- p = intToString
+pub :: PublisherT ProcessorAPI IO
+pub = undefined
 
-processor :: ProcessorT InputEvents Processor IO
+processor :: ProcessorT InputEvents ProcessorAPI IO
 processor =
        ssOrNum
   :<|> intToString
@@ -137,7 +136,7 @@ processor =
 -- getT :: Proxy api -> proxy a -> TC (ChannelType a api)
 -- getT _ _ = TC
 
--- getP :: Proxy api -> proxy processor -> TC (ProcessorM api processor)
+-- getP :: Proxy api -> proxy processor -> TC (Processor api processor)
 -- getP _ _ = TC
 --------------------------------------------------------------------------------
 $(singletons [d|

@@ -38,8 +38,6 @@ import qualified Pipes                as P
 import           Pipes.Concurrent
 import           Servant
 import Control.Monad.IO.Class (liftIO, MonadIO)
-import Control.Monad.Indexed.State (IxMonadState(..), IxStateT(..))
-import Control.Monad.Indexed.Trans (ilift)
 
 import Pipes.Routing.Types
 import Pipes.Routing.HMap
@@ -98,6 +96,20 @@ instance (PublishClient a, PublishClient b) => PublishClient (a :<|> b) where
   mkState (a :<|> b) = undefined
 
 --------------------------------------------------------------------------------
+data Node (chan :: Symbol) a = Node {
+    _nodeIn :: Output a
+  , _nodeOut :: Input a
+  , _nodeSeal :: STM ()
+  } deriving (Generic)
+
+makeLenses ''Node
+
+mkNode :: Buffer a -> IO (Node chan a)
+mkNode x = do
+  (o, i, s) <- spawn' x
+  return $ Node o i s
+
+--------------------------------------------------------------------------------
 class HasPublisher api context where
   type PublisherT api (m :: * -> *) :: *
   publishClient :: Proxy context -> Proxy api -> Publisher api
@@ -107,6 +119,10 @@ type Publisher api = PublisherT api IO --(RouteBuild api r)
 -- type Publisher api i = PublisherT api (ExceptT Err IO)
 
 data Debug
+
+type family PublishChannels processor :: * where
+  PublishChannels (a :<|> b) = (PublishChannels a) :<|> (PublishChannels b)
+  PublishChannels (a :-> b) = b
 
 
 instance (HasPublisher a context, HasPublisher b context) => HasPublisher (a :<|> b) context where
@@ -119,11 +135,14 @@ instance (HasPublisher a context, HasPublisher b context) => HasPublisher (a :<|
         pB = Proxy :: Proxy b
 
 instance (Typeable a, Channels (name :> a), KnownSymbol name, Show a) => HasPublisher (name :> a) Debug where
-  type PublisherT (name :> a) (m :: * -> *) = IO (Output a, Input a, STM ())
-  publishClient _pc _pApi = do
-       (out, inp, seal) <- spawn' unbounded
-       return (out, inp, seal)
+  type PublisherT (name :> a) (m :: * -> *) = IO (Node name a)
+  publishClient _pc _pApi = mkNode unbounded
 
+processorPublishClient
+  :: forall api c pub. (HasPublisher api c, (PublishChannels pub ~ api))
+  => Proxy c -> Proxy pub -> Publisher api
+processorPublishClient pc (Proxy :: Proxy pub) = publishClient pc pApi
+  where pApi = Proxy :: Proxy api
 
 -- mPub
 --   :: (HasPublisher a pc, HasPublisher b pc)
