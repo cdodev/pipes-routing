@@ -18,7 +18,7 @@
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wall #-}
-module Pipes.Routing.Publish where
+module Pipes.Routing.Network where
 
 import           Control.Lens
 import           Control.Monad.Except
@@ -37,6 +37,8 @@ import           Pipes                hiding (Proxy)
 import qualified Pipes                as P
 import           Pipes.Concurrent
 import           Servant
+import System.ZMQ4.Monadic (ZMQ)
+import qualified System.ZMQ4.Monadic as ZMQ
 import Control.Monad.IO.Class (liftIO, MonadIO)
 
 import Pipes.Routing.Types
@@ -76,25 +78,6 @@ data Err deriving Generic
 -- runChans pRoutes = do
 --   liftIO $ mkChannels pRoutes
 
-
-class PublishClient a where
-  type Client a :: *
-  type RouteState a :: [*]
-  mkClient :: a -> Client a
-  mkState :: a -> IO (InputOutput (RouteState a))
-
-instance PublishClient (IO (Output a, InputOutput r)) where
-  type Client (IO (Output a, InputOutput r)) = a -> IO ()
-  type RouteState (IO (Output a, InputOutput r)) = r
-  mkClient = undefined
-  mkState = undefined
-
-instance (PublishClient a, PublishClient b) => PublishClient (a :<|> b) where
-  type Client (a :<|> b) = Client a :<|> Client b
-  type RouteState (a :<|> b) = MergedRoutes (RouteState a) (RouteState b)
-  mkClient (a :<|> b) = undefined
-  mkState (a :<|> b) = undefined
-
 --------------------------------------------------------------------------------
 data Node (chan :: Symbol) a = Node {
     _nodeIn :: Output a
@@ -110,13 +93,13 @@ mkNode x = do
   return $ Node o i s
 
 --------------------------------------------------------------------------------
-class HasPublisher api context where
-  type PublisherT api (m :: * -> *) :: *
-  publishClient :: Proxy context -> Proxy api -> Publisher api
+class HasNetwork api where
+  type NetworkT api (m :: * -> *) :: *
+  networkNode :: Proxy api -> Network api
 
 
-type Publisher api = PublisherT api IO --(RouteBuild api r)
--- type Publisher api i = PublisherT api (ExceptT Err IO)
+type Network api = NetworkT api IO --(RouteBuild api r)
+-- type Network api i = NetworkT api (ExceptT Err IO)
 
 data Debug
 
@@ -125,31 +108,51 @@ type family PublishChannels processor :: * where
   PublishChannels (a :-> b) = b
 
 
-instance (HasPublisher a context, HasPublisher b context) => HasPublisher (a :<|> b) context where
-  type PublisherT (a :<|> b) m = PublisherT a m :<|> PublisherT b m
-  --   RouteBuild (a :<|> b) r (IxOutput (PublisherT (Chans b r) a m) :<|> IxOutput (PublisherT r b m))
-  publishClient pc (Proxy :: Proxy (a :<|> b)) =
-    publishClient pc pA :<|> publishClient pc pB
+instance (HasNetwork a , HasNetwork b ) => HasNetwork (a :<|> b) where
+  type NetworkT (a :<|> b) m = NetworkT a m :<|> NetworkT b m
+  --   RouteBuild (a :<|> b) r (IxOutput (NetworkT (Chans b r) a m) :<|> IxOutput (NetworkT r b m))
+  networkNode (Proxy :: Proxy (a :<|> b)) =
+    networkNode pA :<|> networkNode pB
       where
         pA = Proxy :: Proxy a
         pB = Proxy :: Proxy b
 
-instance (Typeable a, Channels (name :> a), KnownSymbol name, Show a) => HasPublisher (name :> a) Debug where
-  type PublisherT (name :> a) (m :: * -> *) = IO (Node name a)
-  publishClient _pc _pApi = mkNode unbounded
+instance (Typeable a, Channels (name :> a), KnownSymbol name, Show a) => HasNetwork (name :> a) where
+  type NetworkT (name :> a) (m :: * -> *) = IO (Node name a)
+  networkNode _pApi = mkNode unbounded
 
 processorPublishClient
-  :: forall api c pub. (HasPublisher api c, (PublishChannels pub ~ api))
-  => Proxy c -> Proxy pub -> Publisher api
-processorPublishClient pc (Proxy :: Proxy pub) = publishClient pc pApi
+  :: forall api pub. (HasNetwork api, (PublishChannels pub ~ api))
+  => Proxy pub -> Network api
+processorPublishClient (Proxy :: Proxy pub) = networkNode pApi
   where pApi = Proxy :: Proxy api
 
+
+zmqPublisher :: (HasNetwork api) => Network api -> 
+-- class PublishClient a where
+--   type Client a :: *
+--   type RouteState a :: [*]
+--   mkClient :: a -> Client a
+--   mkState :: a -> IO (InputOutput (RouteState a))
+
+-- instance PublishClient (IO (Output a, InputOutput r)) where
+--   type Client (IO (Output a, InputOutput r)) = a -> IO ()
+--   type RouteState (IO (Output a, InputOutput r)) = r
+--   mkClient = undefined
+--   mkState = undefined
+
+-- instance (PublishClient a, PublishClient b) => PublishClient (a :<|> b) where
+--   type Client (a :<|> b) = Client a :<|> Client b
+--   type RouteState (a :<|> b) = MergedRoutes (RouteState a) (RouteState b)
+--   mkClient (a :<|> b) = undefined
+--   mkState (a :<|> b) = undefined
+
 -- mPub
---   :: (HasPublisher a pc, HasPublisher b pc)
+--   :: (HasNetwork a pc, HasNetwork b pc)
 --   => Proxy pc -> Proxy (a :<|> b) -> RouteBuild (a :<|> b) r (Output a, Output b)
 -- mPub pc (Proxy :: Proxy (a :<|> b)) = do
---   right <- publishClient pc pB
---   left <-  publishClient pc pA
+--   right <- networkNode pc pB
+--   left <-  networkNode pc pA
 --   return $ left :<|> right
 --     where
 --       pA = Proxy :: Proxy a
