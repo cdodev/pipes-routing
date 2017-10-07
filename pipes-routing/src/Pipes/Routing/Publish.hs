@@ -22,22 +22,23 @@
 {-# OPTIONS_GHC -Wall #-}
 module Pipes.Routing.Publish where
 
+import           Control.Concurrent.Async (Async)
+import qualified Control.Concurrent.Async as Async
 import           Control.Lens
 import           Control.Monad.Except
-import           Control.Monad.IO.Class (MonadIO, liftIO)
-import           Control.Monad.State    (MonadState, StateT (..), get, evalStateT)
-import qualified Control.Concurrent.Async as Async
-import Control.Concurrent.Async (Async)
+import           Control.Monad.IO.Class   (MonadIO, liftIO)
+import           Control.Monad.State      (MonadState, StateT (..), evalStateT,
+                                           get)
 import           Data.Proxy
-import Data.Serialize (Serialize, encode)
-import           Data.Typeable          (Typeable)
+import           Data.Serialize           (Serialize, encode)
+import           Data.Typeable            (Typeable)
 import           GHC.TypeLits
-import           Pipes                  hiding (Proxy)
-import qualified Pipes                  as P
+import           Pipes                    hiding (Proxy)
+import qualified Pipes                    as P
 import           Pipes.Concurrent
 import           Servant
-import           System.ZMQ4.Monadic    (Socket, XPub, ZMQ)
-import qualified System.ZMQ4.Monadic    as ZMQ
+import           System.ZMQ4.Monadic      (Socket, XPub, ZMQ)
+import qualified System.ZMQ4.Monadic      as ZMQ
 
 
 import           Pipes.Routing.Network

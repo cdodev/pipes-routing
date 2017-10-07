@@ -5,6 +5,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GADTs                      #-}
@@ -21,15 +22,15 @@
 module Pipes.Routing.Network where
 
 import           Control.Lens
-import           Data.Typeable        (Typeable)
-import           GHC.Generics         (Generic)
+import           Control.Monad.IO.Class   (MonadIO, liftIO)
+import           Data.Typeable            (Typeable)
+import           GHC.Generics             (Generic)
 import           GHC.TypeLits
 import           Pipes.Concurrent
 import           Servant
-import Control.Monad.IO.Class (liftIO, MonadIO)
 
-import Pipes.Routing.Types
-import Pipes.Routing.Operations hiding (return, (=<<), (>>=), (>>))
+import           Pipes.Routing.Operations hiding (return, (=<<), (>>), (>>=))
+import           Pipes.Routing.Types
 
 
 newtype Sock a =
@@ -65,8 +66,8 @@ data Err deriving Generic
 
 --------------------------------------------------------------------------------
 data Node (chan :: Symbol) a = Node {
-    _nodeIn :: Output a
-  , _nodeOut :: Input a
+    _nodeIn   :: Output a
+  , _nodeOut  :: Input a
   , _nodeSeal :: STM ()
   } deriving (Generic)
 
