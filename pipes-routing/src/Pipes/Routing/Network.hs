@@ -21,28 +21,14 @@
 module Pipes.Routing.Network where
 
 import           Control.Lens
-import           Control.Monad.Except
-import           Data.Map             (Map)
-import qualified Data.Map             as Map
-import           Data.Maybe           (fromJust)
-import           Data.Proxy
-import           Data.Semigroup       (Semigroup (..))
-import           Data.Text
-import           Data.Text.Lens
-import           Data.Typeable        (cast)
 import           Data.Typeable        (Typeable)
 import           GHC.Generics         (Generic)
 import           GHC.TypeLits
-import           Pipes                hiding (Proxy)
-import qualified Pipes                as P
 import           Pipes.Concurrent
 import           Servant
-import System.ZMQ4.Monadic (ZMQ)
-import qualified System.ZMQ4.Monadic as ZMQ
 import Control.Monad.IO.Class (liftIO, MonadIO)
 
 import Pipes.Routing.Types
-import Pipes.Routing.HMap
 import Pipes.Routing.Operations hiding (return, (=<<), (>>=), (>>))
 
 
@@ -60,10 +46,9 @@ makeWrapped ''Sock
 mkSock
   :: (Show a, MonadIO m, KnownSymbol chan, ChannelType chan api ~ a)
   => Proxy api -> Proxy chan -> m (Input a, Sock a)
-mkSock _ pChan = do
+mkSock _ _ = do
   (o, i, _c) <- liftIO $ spawn' unbounded
   return (i, Sock o)
-  where chanName = symbolVal pChan
 
 runSock :: Sock a -> a -> STM Bool
 runSock (Sock o) = send o
@@ -94,7 +79,7 @@ mkNode x = do
 
 --------------------------------------------------------------------------------
 class HasNetwork api where
-  type NetworkT api (m :: * -> *) :: *
+  data NetworkT api (m :: * -> *) :: *
   networkNode :: Proxy api -> Network api
 
 
@@ -109,17 +94,17 @@ type family PublishChannels processor :: * where
 
 
 instance (HasNetwork a , HasNetwork b ) => HasNetwork (a :<|> b) where
-  type NetworkT (a :<|> b) m = NetworkT a m :<|> NetworkT b m
+  data NetworkT (a :<|> b) m = NetworkAlt (NetworkT a m :<|> NetworkT b m)
   --   RouteBuild (a :<|> b) r (IxOutput (NetworkT (Chans b r) a m) :<|> IxOutput (NetworkT r b m))
   networkNode (Proxy :: Proxy (a :<|> b)) =
-    networkNode pA :<|> networkNode pB
+    NetworkAlt (networkNode pA :<|> networkNode pB)
       where
         pA = Proxy :: Proxy a
         pB = Proxy :: Proxy b
 
-instance (Typeable a, Channels (name :> a), KnownSymbol name, Show a) => HasNetwork (name :> a) where
-  type NetworkT (name :> a) (m :: * -> *) = IO (Node name a)
-  networkNode _pApi = mkNode unbounded
+instance (Typeable a, Channels (name :> (a :: *)), KnownSymbol name) => HasNetwork (name :> a) where
+  data NetworkT (name :> a) (m :: * -> *) = NetworkLeaf (IO (Node name a))
+  networkNode _pApi = NetworkLeaf (mkNode unbounded)
 
 processorPublishClient
   :: forall api pub. (HasNetwork api, (PublishChannels pub ~ api))
@@ -128,7 +113,6 @@ processorPublishClient (Proxy :: Proxy pub) = networkNode pApi
   where pApi = Proxy :: Proxy api
 
 
-zmqPublisher :: (HasNetwork api) => Network api -> 
 -- class PublishClient a where
 --   type Client a :: *
 --   type RouteState a :: [*]

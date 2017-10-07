@@ -18,12 +18,15 @@ library
   exposed-modules:     Pipes.Routing.Types
                        Pipes.Routing.Publish
                        Pipes.Routing.Process
+                       Pipes.Routing.Network
                        Pipes.Routing.Ingest
                        Pipes.Routing.Operations
                        Pipes.Routing.HMap
                        Pipes.Routing
                        Control.Monad.Indexed.State
   build-depends:       base >= 4.7 && < 5
+                     , async
+                     , cereal
                      , pipes
                      , pipes-concurrency
                      , monad-control
