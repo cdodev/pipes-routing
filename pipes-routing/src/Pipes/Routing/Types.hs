@@ -25,15 +25,6 @@ import           GHC.TypeLits
 import           Pipes                hiding (Proxy)
 import           Servant
 
--- | Union of two APIs, first takes precedence in case of overlap.
---
--- Example:
---
--- >>> :{
---type MyApi = "books" :> Get '[JSON] [Book] -- GET /books
---        :<|> "books" :> ReqBody '[JSON] Book :> Post '[JSON] () -- POST /books
--- :}
-
 
 data a :<+> b deriving Typeable
 
@@ -47,6 +38,9 @@ data (chanName :: k) :-> b
      deriving Typeable
 
 infixr 9 :->
+
+type family Chan (chan :: *) :: * where
+  Chan (chan :> a) = a
 
 -- $setup
 -- >>> import Servant.API

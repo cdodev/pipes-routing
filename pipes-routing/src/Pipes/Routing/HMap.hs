@@ -75,8 +75,6 @@ extract _ pKey (Routes m) = fromJust $ Map.lookup k m >>= getInbox
 mergeRoutes :: RouteMap f a -> RouteMap f b -> RouteMap f (MergedRoutes a b)
 mergeRoutes (unRoutes -> a) (unRoutes -> b) = Routes $ Map.union a b
 
-type family Chan (chan :: *) :: * where
-  Chan (chan :> a) = a
 --------------------------------------------------------------------------------
 
 
