@@ -78,6 +78,9 @@ mkNode x = do
   (o, i, s) <- spawn' x
   return $ Node o i s
 
+nodeChannel :: forall chan a. (KnownSymbol chan) => Node chan a -> String
+nodeChannel _ = symbolVal (Proxy :: Proxy chan)
+
 --------------------------------------------------------------------------------
 class HasNetwork api where
   data NetworkT api (m :: * -> *) :: *
