@@ -29,12 +29,12 @@ import           Data.Singletons.TH          hiding ((:>))
 import           Pipes                       hiding (Proxy)
 import           Pipes.Concurrent
 import qualified Pipes.Prelude               as P
-import GHC.TypeLits
+import GHC.TypeLits (KnownSymbol)
 import           Servant.API
 
 
 import           Pipes.Routing.Types
-import           Pipes.Routing.Publish
+-- -- import           Pipes.Routing.Publish
 
 
 
@@ -119,8 +119,8 @@ type InputEvents =
 
 -- p :: ProcessorT INum PNum IO
 -- p = intToString
-pub :: PublisherT ProcessorAPI IO
-pub = undefined
+-- pub :: PublisherT ProcessorAPI IO
+-- pub = undefined
 
 processor :: ProcessorT InputEvents ProcessorAPI IO
 processor =
@@ -143,14 +143,24 @@ $(singletons [d|
   data EventScans
     = PassThrough
     | SuiteProgress
-  |])
 
+  -- cn :: IsString a => EventScans -> a
+  cn PassThrough = "all-events"
+  cn SuiteProgress = "suite-progress"
+
+  |])
 
 deriving instance Bounded EventScans
 deriving instance Enum EventScans
 deriving instance Eq EventScans
 deriving instance Ord EventScans
 deriving instance Show EventScans
+
+
+channelName :: EventScans -> String
+channelName PassThrough = "all-events"
+channelName SuiteProgress = "suite-progress"
+
 
 --------------------------------------------------------------------------------
 data IndexEvent =
@@ -207,11 +217,9 @@ _ `affects` _           = False
 -- toIndexEvent :: Producer' Types.BlazeEvent m () -> Producer' IndexEvent m ()
 -- toIndexEvent p = undefined
 
--- channelName :: EventScans -> Text
--- channelName PassThrough = "all-events"
 
--- forEvent :: EventScans -> (forall c. SEventScans c -> b) -> b
--- forEvent c f = withSomeSing c $ \(sc :: SEventScans c) -> f sc
+forEvent :: EventScans -> (forall c. SEventScans c -> b) -> b
+forEvent c f = withSomeSing c $ \(sc :: SEventScans c) -> f sc
 
  -- onEvent :: (Monad m) => IndexSubscription c -> EventPipe c m
 -- onEvent AllEvents = cat

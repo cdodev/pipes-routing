@@ -1,20 +1,14 @@
 {-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DeriveDataTypeable         #-}
-{-# LANGUAGE DeriveFoldable             #-}
 {-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
@@ -29,12 +23,9 @@ import           Control.Monad.Except
 import           Control.Monad.IO.Class   (MonadIO, liftIO)
 import           Control.Monad.State      (MonadState, StateT (..), evalStateT,
                                            get)
-import           Data.Proxy
 import           Data.Serialize           (Serialize, encode)
 import           Data.Typeable            (Typeable)
 import           GHC.TypeLits
-import           Pipes                    hiding (Proxy)
-import qualified Pipes                    as P
 import           Pipes.Concurrent
 import           Servant
 import           System.ZMQ4.Monadic      (Socket, XPub, ZMQ)
@@ -42,7 +33,6 @@ import qualified System.ZMQ4.Monadic      as ZMQ
 
 
 import           Pipes.Routing.Network
-import           Pipes.Routing.Types
 
 newtype PubState s z a =
   PubState { unPubState :: StateT s (ZMQ z) a }
@@ -55,7 +45,9 @@ runPubState s = flip evalStateT s . unPubState
 class HasNetwork api => ZMQPublisher api where
   zmqPublisher :: Network api -> PubState (Socket z XPub) z (Async ())
 
-instance (Typeable a, Serialize a, KnownSymbol name, HasNetwork api, api ~ (name :> (a :: *))) => ZMQPublisher api where
+instance (Typeable a, Serialize a, KnownSymbol name
+         , HasNetwork api, api ~ (name :> (a :: *)))
+  => ZMQPublisher api where
   zmqPublisher (NetworkLeaf n) = do
     s <- get
     (node :: Node name a) <- liftIO n

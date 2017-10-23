@@ -20,10 +20,10 @@
 module Pipes.Routing.HMap where
 
 import           Control.Lens
-import           Control.Monad               (void)
-import Control.Monad.IO.Class (liftIO, MonadIO)
-import Control.Monad.Indexed.State (IxMonadState(..), IxStateT(..))
-import Control.Monad.Indexed.Trans (ilift)
+-- -- -- import           Control.Monad               (void)
+-- -- -- import Control.Monad.IO.Class (liftIO, MonadIO)
+-- -- -- import Control.Monad.Indexed.State (IxMonadState(..), IxStateT(..))
+-- -- -- import Control.Monad.Indexed.Trans (ilift)
 import           Data.Map.Strict             (Map)
 import qualified Data.Map.Strict             as Map
 import           Data.Maybe                  (fromJust)
@@ -35,7 +35,7 @@ import           Data.Typeable               (Typeable, cast)
 import           GHC.Exts
 import           GHC.TypeLits
 import qualified GHC.TypeLits                as Ty
-import           Pipes.Concurrent
+-- -- -- import           Pipes.Concurrent
 import           Pipes.Routing.Types
 import           Servant.API
 
