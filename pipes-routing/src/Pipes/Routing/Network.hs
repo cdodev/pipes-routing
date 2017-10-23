@@ -23,6 +23,7 @@ module Pipes.Routing.Network where
 
 import           Control.Lens
 import           Control.Monad.IO.Class   (MonadIO, liftIO)
+import           Data.IORef
 import           Data.Typeable            (Typeable)
 import           GHC.Generics             (Generic)
 import           GHC.TypeLits
@@ -73,18 +74,23 @@ data Node (chan :: Symbol) a = Node {
 
 makeLenses ''Node
 
-mkNode :: Buffer a -> IO (Node chan a)
+mkNode :: Buffer a -> IO (IORef (Node chan a))
 mkNode x = do
   (o, i, s) <- spawn' x
-  return $ Node o i s
+  newIORef $ Node o i s
 
 nodeChannel :: forall chan a. (KnownSymbol chan) => Node chan a -> String
 nodeChannel _ = symbolVal (Proxy :: Proxy chan)
 
+sendNode :: (KnownSymbol chan) => Node chan a -> a -> IO Bool
+sendNode n a = do
+  -- putStrLn $ "Sending to " ++ (nodeChannel n)
+  atomically $ send (n ^. nodeIn) a
+
 --------------------------------------------------------------------------------
 class HasNetwork api where
   data NetworkT api (m :: * -> *) :: *
-  networkNode :: Proxy api -> Network api
+  networkNode :: Proxy api -> IO (Network api)
 
 
 type Network api = NetworkT api IO --(RouteBuild api r)
@@ -100,21 +106,23 @@ type family PublishChannels processor :: * where
 instance (HasNetwork a , HasNetwork b ) => HasNetwork (a :<|> b) where
   data NetworkT (a :<|> b) m = NetworkAlt (NetworkT a m :<|> NetworkT b m)
   --   RouteBuild (a :<|> b) r (IxOutput (NetworkT (Chans b r) a m) :<|> IxOutput (NetworkT r b m))
-  networkNode (Proxy :: Proxy (a :<|> b)) =
-    NetworkAlt (networkNode pA :<|> networkNode pB)
+  networkNode (Proxy :: Proxy (a :<|> b)) = do
+    na <- networkNode pA
+    nb <- networkNode pB
+    return $ NetworkAlt (na :<|> nb)
       where
         pA = Proxy :: Proxy a
         pB = Proxy :: Proxy b
 
 instance (Typeable a, Channels (name :> (a :: *)), KnownSymbol name) => HasNetwork (name :> a) where
-  data NetworkT (name :> a) (m :: * -> *) = NetworkLeaf (IO (Node name a))
-  networkNode _pApi = NetworkLeaf (mkNode unbounded)
+  data NetworkT (name :> a) (m :: * -> *) = NetworkLeaf ((IORef (Node name a)))
+  networkNode _pApi = NetworkLeaf <$> mkNode unbounded
 
-processorPublishClient
-  :: forall api pub. (HasNetwork api, (PublishChannels pub ~ api))
-  => Proxy pub -> Network api
-processorPublishClient (Proxy :: Proxy pub) = networkNode pApi
-  where pApi = Proxy :: Proxy api
+-- processorPublishClient
+--   :: forall api pub. (HasNetwork api, (PublishChannels pub ~ api))
+--   => Proxy pub -> Network api
+-- processorPublishClient (Proxy :: Proxy pub) = networkNode pApi
+--   where pApi = Proxy :: Proxy api
 
 
 -- class PublishClient a where

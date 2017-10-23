@@ -29,14 +29,12 @@ import           Data.Singletons.TH          hiding ((:>))
 import           Pipes                       hiding (Proxy)
 import           Pipes.Concurrent
 import qualified Pipes.Prelude               as P
-import GHC.TypeLits (KnownSymbol)
+import GHC.TypeLits (KnownSymbol, Symbol)
 import           Servant.API
 
 
 import           Pipes.Routing.Types
 -- -- import           Pipes.Routing.Publish
-
-
 
 --------------------------------------------------------------------------------
 type family ProcessInputs (api :: *) (chanName :: k) (m :: * -> *) :: * where
@@ -44,22 +42,25 @@ type family ProcessInputs (api :: *) (chanName :: k) (m :: * -> *) :: * where
     (Producer (ChannelType a api) m (), Producer (ChannelType b api) m ())
   ProcessInputs api chanName m = Producer (ChannelType chanName api) m ()
 
+
 --------------------------------------------------------------------------------
+type OutChan (chan :: Symbol) out m = m (Producer out m (), STM ())
+
 class HasProcessor (api :: *) processor where
   type ProcessorT api processor (m :: * -> *) :: *
-  server :: Proxy api -> Proxy processor -> Processor api processor
+  connect :: Proxy api -> ProcessorT api processor m -> m ()
   -- process ::
 
 type Processor api processor = ProcessorT api processor P
 
 instance (KnownSymbol chan) => HasProcessor api (l :-> chan :> (out :: *)) where
   type ProcessorT api (l :-> chan :> out) m =
-    ProcessInputs api l m -> m (Producer out m (), STM ())
-  server _ _ = undefined
+    ProcessInputs api l m -> OutChan chan out m
+  processor p = leaf p
 
 instance HasProcessor api (l :<|> r) where
   type ProcessorT api (l :<|> r) m = ProcessorT api l m :<|> ProcessorT api r m
-  server _ _ = undefined
+  processor pApi (l :<|> r) = _
 
 
 --------------------------------------------------------------------------------
@@ -122,8 +123,8 @@ type InputEvents =
 -- pub :: PublisherT ProcessorAPI IO
 -- pub = undefined
 
-processor :: ProcessorT InputEvents ProcessorAPI IO
-processor =
+processorT :: ProcessorT InputEvents ProcessorAPI IO
+processorT =
        ssOrNum
   :<|> intToString
 
