@@ -79,12 +79,14 @@ runRouter is = ZMQ.runZMQ $ makeZMQRouter is
 -- LOW LEVEL SOCKET OPS
 sockProducer :: Serialize a =>  Socket z Sub -> Producer a (ZMQ z) ()
 sockProducer sub = forever $ do
-  [chan, bs] <- lift $ ZMQ.receiveMulti sub
+  [_chan, bs] <- lift $ ZMQ.receiveMulti sub
+  -- liftIO $ print (chan, bs)
   yield (bs ^?! to decode . _Right)
 
 sockConsumer :: (Serialize a, KnownSymbol chan) => Socket z Pub -> Proxy chan -> Consumer a (ZMQ z) ()
-sockConsumer pub pC = do
+sockConsumer pub pC = forever $ do
   a <- await
+  -- liftIO $ putStrLn ("Sending a " ++ (nodeChannel pC))
   lift $ ZMQ.sendMulti pub $ chan' :| [encode a]
   where
     chan' = nodeChannel pC ^. packedChars
@@ -113,6 +115,7 @@ instance (Typeable a, Serialize a, KnownSymbol name , api ~ (name :> (a :: *)))
     let s = is ^. recvFrom
     liftIO . putStrLn $ "Connecting " ++ symbolVal (Proxy :: Proxy name)
     sock <- ZMQ.socket Sub -- ZMQ.async (go s)
+    ZMQ.subscribe sock (nodeChannel (Proxy :: Proxy name) ^. packedChars)
     ZMQ.connect sock s
     return . Node $ sockProducer sock
 
