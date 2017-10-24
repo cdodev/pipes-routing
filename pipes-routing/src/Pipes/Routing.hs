@@ -1,7 +1,7 @@
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
@@ -28,19 +28,20 @@ module Pipes.Routing
   -- )
   where
 
-import Control.Lens
-import           Data.Serialize       (Serialize, encode, decode)
-import           Data.Typeable        (Typeable)
-import Data.Proxy
-import           Control.Monad.Reader
 import           Control.Concurrent
 import           Control.Concurrent.Async
+import           Control.Lens
+import           Control.Monad.Reader
+import           Data.Proxy
+import           Data.Serialize           (Serialize, decode, encode)
+import           Data.Typeable            (Typeable)
 import           GHC.Generics
 import           Servant
 import qualified System.ZMQ4.Monadic      as ZMQ
+import Pipes ((>->), runEffect)
+import qualified Pipes as P
 
 import           Pipes.Routing.Ingest
-import           Pipes.Routing.Network
 
 data AThing = AThing Double Double deriving (Generic, Typeable, Serialize, Show)
 
@@ -52,16 +53,20 @@ type TestAPI =
 testApi :: Proxy TestAPI
 testApi = Proxy
 
+ingSettings :: IngestSettings
 ingSettings = IngestSettings "ipc:///tmp/send" "ipc:///tmp/recv"
 
 main :: IO ()
 main = do
-  net <- networkNode testApi
-  ing <- flip runReaderT ingSettings $ runIngester net
-  putStrLn "Created ingester"
-  -- threadDelay 1000000
-  sendInt :<|> sendStr :<|> sendThing <- client net
-  putStrLn "Created clients"
+  r <- ZMQ.runZMQ $ do
+    r' <- makeZMQRouter ingSettings
+    ing <- zmqIngester testApi ingSettings
+    liftIO (threadDelay 1000)
+    sendInt :<|> sendStr :<|> sendThing <- client testApi ingSettings
+    runEffect (P.each [1..5] >-> sendInt)
+    liftIO (threadDelay 1000)
+    runEffect (P.each ["test", "test2"] >-> sendStr)
+    return r'
   a <- ZMQ.runZMQ $ do
     s <- ZMQ.socket ZMQ.Sub
     ZMQ.connect s (ingSettings ^. recvFrom)
@@ -72,12 +77,7 @@ main = do
       -- msg <- ZMQ.receive s
       liftIO $ print (chan, decode bs :: Either String AThing)
       liftIO $ putStrLn "====================="
-      liftIO (threadDelay 1000000)
-  threadDelay 10000
-  putStrLn "Sending"
-  sendInt 1
-  sendInt 2
-  sendStr "test"
-  void $ sendThing (AThing 1.1 2.2)
-  void $ sendThing (AThing 5.1 5.2)
-  void $ wait a
+      liftIO (threadDelay 1000)
+  -- void $ sendThing (AThing 1.1 2.2)
+  -- void $ sendThing (AThing 5.1 5.2)
+  void $ waitBoth a (r ^. router)

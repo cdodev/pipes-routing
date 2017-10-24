@@ -31,6 +31,7 @@ library
                      , pipes-concurrency
                      , monad-control
                      , bifunctors
+                     , bytestring
                      , containers
                      , indexed
                      , mtl
