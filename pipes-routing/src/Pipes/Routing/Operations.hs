@@ -69,8 +69,8 @@ class Channels api where
   mkChannels :: Proxy api -> RouteBuild api i (Output (Chan api))
 
 
-instance (KnownSymbol chan, Typeable a, Chan (chan :> a) ~ ty) => Channels (chan :> a) where
-  type Chans (chan :> a) i = (chan :> a) ': i
+instance (KnownSymbol chan, Typeable a, Chan (chan ::: a) ~ ty) => Channels (chan ::: a) where
+  type Chans (chan ::: a) i = (chan ::: a) ': i
   mkChannels pApi = do
     (routes :: InputOutput i) <- iget
     (out :: Output ty, inp :: Input ty) <- ilift $ spawn unbounded

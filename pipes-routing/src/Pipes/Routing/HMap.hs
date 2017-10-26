@@ -49,15 +49,15 @@ getInbox :: (Typeable a, Typeable f) => SomeVal f -> Maybe (f a)
 getInbox (I i) = cast i
 
 type family RouteElem (r :: *) (routes :: [*]) :: Constraint where
-  RouteElem (k :> i) '[] = TypeError (('Ty.Text "Route '") :<>: ('ShowType (k :> i)) :<>: ('Ty.Text "' not found"))
-  RouteElem (k :> i) (k :> i ': xs) = ()
-  RouteElem (k :> i) (a ': as) = RouteElem (k :> i) as
+  RouteElem (k ::: i) '[] = TypeError (('Ty.Text "Route '") :<>: ('ShowType (k ::: i)) :<>: ('Ty.Text "' not found"))
+  RouteElem (k ::: i) (k ::: i ': xs) = ()
+  RouteElem (k ::: i) (a ': as) = RouteElem (k ::: i) as
 
 type MergedRoutes a b = a :++ b
 
 insert
   :: (KnownSymbol k, Typeable i, ChannelType k api ~ i)
-  => Proxy api -> Proxy k -> f i -> RouteMap f routes -> RouteMap f ((k :> i) ': routes)
+  => Proxy api -> Proxy k -> f i -> RouteMap f routes -> RouteMap f ((k ::: i) ': routes)
 insert _ pKey i = Routes . Map.insert k (I i) . unRoutes
   where
     k = (symbolVal pKey) ^. packed
@@ -65,7 +65,7 @@ insert _ pKey i = Routes . Map.insert k (I i) . unRoutes
 extract
   :: ( KnownSymbol k, Typeable i, Typeable f
      , ChannelType k api ~ i
-     , RouteElem (k :> i) routes
+     , RouteElem (k ::: i) routes
      )
   => Proxy api -> Proxy k -> RouteMap f routes -> f i
 extract _ pKey (Routes m) = fromJust $ Map.lookup k m >>= getInbox
@@ -86,7 +86,7 @@ mergeRoutes (unRoutes -> a) (unRoutes -> b) = Routes $ Map.union a b
 --     return (mergeRoutes riA riB, mergeRoutes roA roB)
 
 --------------------------------------------------------------------------------
-type API = "a" :> Int :<|> "b" :> String :<|> "c" :> Double
+type API = "a" ::: Int :<|> "b" ::: String :<|> "c" ::: Double
 
 -- api :: Proxy API
 -- api = Proxy :: Proxy API
@@ -98,7 +98,7 @@ type API = "a" :> Int :<|> "b" :> String :<|> "c" :> Double
 -- main = do
 --   (oa, ia) <- spawn unbounded
 --   (ob, ib) <- spawn unbounded
---   let p = insert api (Proxy :: Proxy "b") ib emptyRoutes  -- :: RouteMap Input (ChannelList ("b" :> String))
+--   let p = insert api (Proxy :: Proxy "b") ib emptyRoutes  -- :: RouteMap Input (ChannelList ("b" ::: String))
 --       p1 = insert api (Proxy :: Proxy "c") ia p
 --       chanA = extract api (Proxy :: Proxy "c") p1
 --       chanB = extract api (Proxy :: Proxy "b") p1

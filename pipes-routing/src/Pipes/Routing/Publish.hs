@@ -46,7 +46,7 @@ class HasNetwork api => ZMQPublisher api where
   zmqPublisher :: Network api -> PubState (Socket z XPub) z (Async ())
 
 instance (Typeable a, Serialize a, KnownSymbol name
-         , HasNetwork api, api ~ (name :> (a :: *)))
+         , HasNetwork api, api ~ (name ::: (a :: *)))
   => ZMQPublisher api where
   zmqPublisher (NetworkLeaf n) = do
     s <- get

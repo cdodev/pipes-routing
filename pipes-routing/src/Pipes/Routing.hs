@@ -47,9 +47,9 @@ import           Pipes.Routing.Ingest
 data AThing = AThing Double Double deriving (Generic, Typeable, Serialize, Show)
 
 type TestAPI =
-       "int" :> Int
-  :<|> "str" :> String
-  :<|> "thing" :> AThing
+       "int" ::: Int
+  :<|> "str" ::: String
+  :<|> "thing" ::: AThing
 
 testApi :: Proxy TestAPI
 testApi = Proxy

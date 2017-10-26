@@ -114,8 +114,8 @@ instance (HasNetwork a , HasNetwork b ) => HasNetwork (a :<|> b) where
         pA = Proxy :: Proxy a
         pB = Proxy :: Proxy b
 
-instance (Typeable a, Channels (name :> (a :: *)), KnownSymbol name) => HasNetwork (name :> a) where
-  data NetworkT (name :> a) (m :: * -> *) = NetworkLeaf ((IORef (Node name a)))
+instance (Typeable a, Channels (name ::: (a :: *)), KnownSymbol name) => HasNetwork (name ::: a) where
+  data NetworkT (name ::: a) (m :: * -> *) = NetworkLeaf ((IORef (Node name a)))
   networkNode _pApi = NetworkLeaf <$> mkNode unbounded
 
 -- processorPublishClient

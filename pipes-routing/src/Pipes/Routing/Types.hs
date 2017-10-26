@@ -1,18 +1,11 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveDataTypeable         #-}
-{-# LANGUAGE DeriveFoldable             #-}
-{-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
@@ -22,32 +15,22 @@ module Pipes.Routing.Types where
 
 import           Data.Typeable        (Typeable)
 import           GHC.TypeLits
-import           Pipes                hiding (Proxy)
 import           Servant
 
+data (chan :: Symbol) ::: a
+    deriving (Typeable)
+infixr 4 :::
 
+--------------------------------------------------------------------------------
 data a :<+> b deriving Typeable
 
 infixr 8 :<+>
 
-data ChanName (a :: Symbol) :: * deriving Typeable
-
-newtype ProcessPipe a b = ProcessPipe (Pipe a b IO ()) deriving Typeable
-
+--------------------------------------------------------------------------------
 data (chanName :: k) :-> b
      deriving Typeable
 
 infixr 9 :->
-
-type family Chan (chan :: *) :: * where
-  Chan (chan :> a) = a
-
--- $setup
--- >>> import Servant.API
--- >>> import Data.Aeson
--- >>> import Data.Text
--- >>> data Book
--- >>> instance ToJSON Book where { toJSON = undefined }
 --------------------------------------------------------------------------------
 
 
