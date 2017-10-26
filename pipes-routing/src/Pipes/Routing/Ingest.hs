@@ -83,6 +83,20 @@ sockProducer sub = forever $ do
   -- liftIO $ print (chan, bs)
   yield (bs ^?! to decode . _Right)
 
+mkProducer
+  :: forall chan a z. (KnownSymbol chan, Serialize a)
+  => Socket z Sub
+  -> Proxy (chan ::: a)
+  -> Producer a (ZMQ z) ()
+mkProducer sub _ = do
+  lift $ ZMQ.subscribe sub subChan
+  forever $ do
+    [_chan, bs] <- lift $ ZMQ.receiveMulti sub
+    -- liftIO $ print (chan, bs)
+    yield (bs ^?! to decode . _Right)
+  where
+    subChan =  (nodeChannel (Proxy :: Proxy chan) ^. packedChars)
+
 sockConsumer :: (Serialize a, KnownSymbol chan) => Socket z Pub -> Proxy chan -> Consumer a (ZMQ z) ()
 sockConsumer pub pC = forever $ do
   a <- await
@@ -97,29 +111,29 @@ nodeChannel = symbolVal
 --------------------------------------------------------------------------------
 class ZMQIngester api where
   type IngestClientT api (m :: * -> *) :: *
-  data IngestNodeT api (m :: * -> *) :: *
+  type IngestNodeT api (m :: * -> *) :: *
   zmqIngester :: Proxy api -> IngestSettings -> ZMQ z (IngestNode api z)
   client :: Proxy api -> IngestSettings -> ZMQ z (IngestClient api z)
 
 type IngestNode api z = IngestNodeT api (ZMQ z)
 type IngestClient api z = IngestClientT api (ZMQ z)
 
-instance (Typeable a, Serialize a, KnownSymbol name , api ~ (name :> (a :: *)))
-  => ZMQIngester (name :> a) where
+instance (Typeable a, Serialize a, KnownSymbol name , api ~ (name ::: (a :: *)))
+  => ZMQIngester (name ::: a) where
 
-  type IngestClientT (name :> a) (m :: * -> *) = Consumer a m ()
+  type IngestClientT (name ::: a) (m :: * -> *) = Consumer a m ()
 
-  data IngestNodeT (name :> a) (m :: * -> *) = Node (Producer a m ())
+  type IngestNodeT (name ::: a) (m :: * -> *) = Producer a m ()
 
-  zmqIngester (Proxy :: Proxy (name :> a)) is = do
+  zmqIngester pChan@(Proxy :: Proxy (name ::: a)) is = do
     let s = is ^. recvFrom
     liftIO . putStrLn $ "Connecting " ++ symbolVal (Proxy :: Proxy name)
     sock <- ZMQ.socket Sub -- ZMQ.async (go s)
-    ZMQ.subscribe sock (nodeChannel (Proxy :: Proxy name) ^. packedChars)
+    -- ZMQ.subscribe sock (nodeChannel (Proxy :: Proxy name) ^. packedChars)
     ZMQ.connect sock s
-    return . Node $ sockProducer sock
+    return $ mkProducer sock pChan
 
-  client (Proxy :: Proxy (name :> a)) is = do
+  client (Proxy :: Proxy (name ::: a)) is = do
     let s = is ^. sendTo
     sock <- ZMQ.socket Pub -- ZMQ.async (go s)
     ZMQ.connect sock s
@@ -127,11 +141,11 @@ instance (Typeable a, Serialize a, KnownSymbol name , api ~ (name :> (a :: *)))
 
 instance (ZMQIngester a, ZMQIngester b) => ZMQIngester (a :<|> b) where
   type IngestClientT (a :<|> b) m = IngestClientT a m :<|> IngestClientT b m
-  data IngestNodeT (a :<|> b) m = NodeAlt (IngestNodeT a m :<|> IngestNodeT b m)
+  type IngestNodeT (a :<|> b) m = IngestNodeT a m :<|> IngestNodeT b m
   zmqIngester (Proxy :: Proxy (a :<|> b)) is = do
     ta <- za
     tb <- zb
-    return . NodeAlt $ (ta :<|> tb)
+    return $ ta :<|> tb
     where
       za = zmqIngester (Proxy :: Proxy a) is
       zb = zmqIngester (Proxy :: Proxy b) is

@@ -62,7 +62,7 @@ main = do
   r <- ZMQ.runZMQ $ do
     r' <- makeZMQRouter ingSettings
     liftIO $ putStrLn "made router"
-    (NodeAlt (Node i :<|> (NodeAlt (Node str :<|> Node th)))) <- zmqIngester testApi ingSettings
+    i :<|> str :<|> th <- zmqIngester testApi ingSettings
     liftIO $ putStrLn "made ingester"
     -- liftIO (runAlt ing)
     liftIO (threadDelay 10000)
@@ -94,9 +94,3 @@ main = do
   -- void $ sendThing (AThing 1.1 2.2)
   -- void $ sendThing (AThing 5.1 5.2)
   void $ wait (r ^. router)
-
-
-runIng (Node p) = runEffect (p >-> P.print)
-runAlt (NodeAlt (a :<|> b)) = do
-  forkIO (runIng a)
-  forkIO (runIng b)
