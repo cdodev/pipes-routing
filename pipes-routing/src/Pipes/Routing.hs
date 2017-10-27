@@ -36,12 +36,12 @@ import           Data.Proxy
 import           Data.Serialize           (Serialize, decode, encode)
 import           Data.Typeable            (Typeable)
 import           GHC.Generics
-import           Servant
 import qualified System.ZMQ4.Monadic      as ZMQ
 import Pipes ((>->), runEffect)
 import qualified Pipes as P
 import qualified Pipes.Prelude as P
 
+import           Pipes.Routing.Types
 import           Pipes.Routing.Ingest
 
 data AThing = AThing Double Double deriving (Generic, Typeable, Serialize, Show)

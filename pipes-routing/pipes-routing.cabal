@@ -33,6 +33,7 @@ library
                      , bifunctors
                      , bytestring
                      , containers
+                     , generic-lens
                      , indexed
                      , mtl
                      , lens
@@ -42,6 +43,7 @@ library
                      , servant-server
                      , servant-client
                      , singletons >= 2.2
+                     , stm
                      , text
                      , zeromq4-haskell
   default-language:    Haskell2010

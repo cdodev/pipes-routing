@@ -1,5 +1,7 @@
+{-# LANGUAGE AllowAmbiguousTypes   #-}
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
@@ -12,61 +14,160 @@
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 {-# OPTIONS_GHC -Wall #-}
 module Pipes.Routing.Process where
 
+import           Control.Concurrent.Async    (Async)
 import           Control.Concurrent.Lifted   hiding (yield)
+import           Control.Concurrent.STM.TVar
 import           Control.Lens
+import           Control.Monad.Reader
+import           Control.Monad.State
 import           Control.Monad.Trans.Control
+import           Data.Serialize              (Serialize, decode, encode)
 -- import Data.Functor.Contravariant
-import           Data.Monoid
+import           Data.Generics.Product
+import           Data.Kind
+import           Data.Monoid                 hiding (Alt)
 import           Data.Proxy                  (Proxy (..))
 import           Data.Singletons
-import           Data.Singletons.TypeLits
 import           Data.Singletons.TH          hiding ((:::))
+import           Data.Singletons.TypeLits
 -- import Data.Kind
-import Data.Text (Text)
+import           Data.Text                   (Text)
+import           GHC.Generics
+import           GHC.TypeLits                (KnownSymbol, Symbol)
 import           Pipes                       hiding (Proxy)
 import           Pipes.Concurrent
 import qualified Pipes.Prelude               as P
-import GHC.TypeLits (KnownSymbol, Symbol)
 import           Servant.API
+import           System.ZMQ4.Monadic         as ZMQ
 
-
+import           Pipes.Routing.Ingest
 import           Pipes.Routing.Types
 -- -- import           Pipes.Routing.Publish
 
---------------------------------------------------------------------------------
-type family ProcessInputs (api :: *) (chanName :: k) (m :: * -> *) :: * where
-  ProcessInputs api (a :<+> b) m =
-    (Producer (ChannelType a api) m (), Producer (ChannelType b api) m ())
-  ProcessInputs api chanName m = Producer (ChannelType chanName api) m ()
-
 
 --------------------------------------------------------------------------------
-type OutChan (chan :: Symbol) out m = m (Producer out m (), STM ())
+type family ProcessInputs (api :: *) (chan :: k) :: [*] where
+  ProcessInputs api (a :<+> b) = a ::: (ChannelType a api) ': ProcessInputs api b
+  ProcessInputs api chan = '[chan ::: ChannelType chan api]
 
+
+type family HasSingleField chan record b :: Constraint where
+  HasSingleField ((chan :: Symbol) ::: a) record b = HasField chan (a -> b) record
+
+type family HasFields (chans :: [*]) record b :: Constraint where
+  HasFields (c ': rest) record b = (HasSingleField c record b, HasFields rest record b)
+  HasFields '[] _ _ = ()
+
+--------------------------------------------------------------------------------
+newtype Joiner fields out r = Joiner r deriving (Generic)
+
+makeWrapped ''Joiner
+
+--------------------------------------------------------------------------------
+mkProcessor
+  :: (MonadReader r m, HasIngestSettings r
+     , KnownSymbol subChan, KnownSymbol pushChan, Serialize a, Serialize b)
+  => Proxy (subChan ::: a) -> Proxy (pushChan ::: b) -> (a -> b) -> m (ZMQ z (Async ()))
+mkProcessor pSubChan pFanInChan f = do
+  subAddr <- view recvFrom
+  return $ do
+    sub <- socket Sub
+    ZMQ.connect sub subAddr
+    push <- socket Push
+    ZMQ.connect push pushConn
+    let subP = sockSubscriber sub pSubChan
+        pushC = sockPusher push
+    async $ runEffect $ subP >-> P.map f >-> pushC
+  where
+    pushConn = "inproc://" ++ (nodeChannel $ chanP pFanInChan)
+
+class MkFaninProcessor chans b pushChan r where
+  runFanin
+    ::(MonadReader s m, KnownSymbol pushChan, HasIngestSettings s, HasFields chans r b
+      , Serialize a, Serialize b, Generic r)
+    => Proxy chans -> Proxy (pushChan ::: b) -> r -> m (ZMQ z (Async ()))
+
+instance MkFaninProcessor '[] b  pushChan r where
+  runFanin _ _ _ = return (async (return ()))
+
+instance (KnownSymbol subChan, Serialize a, Serialize b
+         , HasField subChan (a -> b) r
+         , HasFields rest r b
+         , MkFaninProcessor rest b pushChan r)
+  => MkFaninProcessor (subChan ::: a ': rest) b pushChan r where
+  runFanin (Proxy :: Proxy (subChan ::: a ': rest))
+           pPushChan
+           r = do
+    mkProcessor pSubChan pPushChan (getField @subChan r)
+    -- runFanin pRest pPushChan r
+    where
+      pSubChan = Proxy :: Proxy (subChan ::: a)
+      pRest  = Proxy :: Proxy rest
+--------------------------------------------------------------------------------
 class HasProcessor (api :: *) processor where
-  data ProcessorT api processor (m :: * -> *) :: *
-  connect :: Proxy api -> Processor api processor -> P ()
+  type ProcessorT api processor (m :: * -> *) :: *
+  data JoinerT api processor j :: *
+  process :: Proxy api -> JoinerT api processor j -> ZMQ z (Processor api processor z)
   -- process ::
 
-type Processor api processor = ProcessorT api processor P
+type Processor api processor z = ProcessorT api processor (ZMQ z)
 
--- instance (KnownSymbol chan) => HasProcessor api (l :-> chan ::: (out :: *)) where
---   type ProcessorT api (l :-> chan ::: out) m =
---     ProcessInputs api l m -> OutChan chan out m
---   processor p = leaf p
+--------------------------------------------------------------------------------
+instance (Serialize out, KnownSymbol chan) => HasProcessor api (l :-> chan ::: (out :: *)) where
+  type ProcessorT api (l :-> chan ::: out) m = Producer out m ()
+  data JoinerT api (l :-> (chan ::: out)) r = Node (Joiner (l :-> (chan ::: out)) out r)
+  process pApi (Node (joiner :: Joiner (l :-> chan ::: out) out r)) = do
+    pull <- socket Pull
+    ZMQ.bind pull pullConn
+    -- runFanin 
+    return $ sockPuller pFanInChan pull
+    where
+      pullConn = "inproc://" ++ (nodeChannel $ chanP pFanInChan)
+      pFanInChan = Proxy :: Proxy (chan ::: out)
+      mkFanIn chan = withSomeSing chan $ \(singChan :: SSymbol c) -> do
+        undefined
+        -- mkProcessor pChan pFanInChan (joiner ^. _Wrapped' . field @c)
 
--- instance HasProcessor api (l :<|> r) where
---   type ProcessorT api (l :<|> r) m = ProcessorT api l m :<|> ProcessorT api r m
---   processor pApi (l :<|> r) = _
+        where
+          pChan = Proxy :: Proxy (c ::: ChannelType c api)
 
-chanSym :: (KnownSymbol chan) =>  proxy chan -> Int
-chanSym s = withSomeSing s $ \ sc -> withKnownSymbol sc _
+instance (HasProcessor api l, HasProcessor api r) => HasProcessor api (l :<|> r) where
+  type ProcessorT api (l :<|> r) m = ProcessorT api l m :<|> ProcessorT api r m
+  data JoinerT api (l :<|> r) j = Alt (JoinerT api l j :<|> JoinerT api r j)
+  process pApi (Alt (l :<|> r)) = do
+    ta <- pa
+    tb <- pb
+    return $ ta :<|> tb
+    where
+      pa = process pApi l
+      pb = process pApi r
+
+data Ext = Ext {
+    a :: Int -> String
+  , b :: String -> String
+  , c :: Double -> String
+  } deriving (Generic)
+
+type API = ("a" ::: Int :<|> "b" ::: String)
+type Fs = ProcessInputs API ("a" :<+> "b")
+
+type A = HasFields Fs Ext String
+
+makeProc
+  :: forall record fld . (HasFields Fs record String, HasField fld (Int -> String) record, Generic record)
+  => Proxy fld -> record -> Int -> String
+makeProc _ r i = getField @fld r i
+
+s = makeProc (Proxy :: Proxy "a") (Ext show id show)
+-- chanSym :: (KnownSymbol chan) =>  proxy chan -> Int
+-- chanSym s = withSomeSing s $ \ sc -> withKnownSymbol sc _
 
 --------------------------------------------------------------------------------
 -- suiteStartClient :: Publisher String
@@ -151,7 +252,7 @@ $(singletons [d|
     | SuiteProgress
 
   -- cn :: IsString a => EventScans -> a
-  cn PassThrough = "all-events"
+  cn PassThrough   = "all-events"
   cn SuiteProgress = "suite-progress"
 
   |])
@@ -164,7 +265,7 @@ deriving instance Show EventScans
 
 
 channelName :: EventScans -> String
-channelName PassThrough = "all-events"
+channelName PassThrough   = "all-events"
 channelName SuiteProgress = "suite-progress"
 
 

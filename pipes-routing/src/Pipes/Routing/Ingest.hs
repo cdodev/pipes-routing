@@ -18,27 +18,27 @@
 {-# OPTIONS_GHC -Wall #-}
 module Pipes.Routing.Ingest where
 
-import           Control.Concurrent (threadDelay)
+import           Control.Concurrent       (threadDelay)
 import           Control.Concurrent.Async (Async)
 import qualified Control.Concurrent.Async as Async
 import           Control.Lens
 import           Control.Monad.IO.Class   (MonadIO, liftIO)
 import           Control.Monad.Reader
-import           Data.ByteString (ByteString)
+import           Data.ByteString          (ByteString)
 import           Data.ByteString.Lens
-import           Data.IORef
 import           Data.List.NonEmpty       (NonEmpty (..))
-import           Data.Serialize           (Serialize, encode, decode)
+import           Data.Serialize           (Serialize, decode, encode)
 import           Data.Typeable            (Typeable)
 import           GHC.TypeLits
-import           Pipes                    (Producer, Consumer, await, yield)
+import           Pipes                    (Consumer, Producer, await, yield)
 import           Servant
-import           System.ZMQ4.Monadic      (Pub (Pub), Socket, Sub (Sub),
+import           System.ZMQ4.Monadic      (Pub (Pub), Pull (Pull), Push (Push),
+                                           Sender, Socket, Sub (Sub),
                                            XPub (XPub), XSub (XSub), ZMQ)
 import qualified System.ZMQ4.Monadic      as ZMQ
 
 
--- import           Pipes.Routing.Network
+import           Pipes.Routing.Types
 
 
 --------------------------------------------------------------------------------
@@ -77,37 +77,50 @@ runRouter is = ZMQ.runZMQ $ makeZMQRouter is
 
 --------------------------------------------------------------------------------
 -- LOW LEVEL SOCKET OPS
-sockProducer :: Serialize a =>  Socket z Sub -> Producer a (ZMQ z) ()
-sockProducer sub = forever $ do
-  [_chan, bs] <- lift $ ZMQ.receiveMulti sub
-  -- liftIO $ print (chan, bs)
-  yield (bs ^?! to decode . _Right)
-
-mkProducer
-  :: forall chan a z. (KnownSymbol chan, Serialize a)
+sockSubscriber
+  :: (KnownSymbol chan, Serialize a)
   => Socket z Sub
   -> Proxy (chan ::: a)
   -> Producer a (ZMQ z) ()
-mkProducer sub _ = do
+sockSubscriber sub p = do
   lift $ ZMQ.subscribe sub subChan
   forever $ do
     [_chan, bs] <- lift $ ZMQ.receiveMulti sub
     -- liftIO $ print (chan, bs)
     yield (bs ^?! to decode . _Right)
   where
-    subChan =  (nodeChannel (Proxy :: Proxy chan) ^. packedChars)
+    subChan = subChannel $ chanP p
 
-sockConsumer :: (Serialize a, KnownSymbol chan) => Socket z Pub -> Proxy chan -> Consumer a (ZMQ z) ()
-sockConsumer pub pC = forever $ do
+sockPublisher
+  :: (Serialize a, KnownSymbol chan)
+  => Socket z Pub -> Proxy (chan ::: a) -> Consumer a (ZMQ z) ()
+sockPublisher pub p = forever $ do
   a <- await
   -- liftIO $ putStrLn ("Sending a " ++ (nodeChannel pC))
   lift $ ZMQ.sendMulti pub $ chan' :| [encode a]
   where
-    chan' = nodeChannel pC ^. packedChars
+    chan' = subChannel $ chanP p
 
-nodeChannel :: forall chan a. (KnownSymbol chan) => Proxy chan -> String
+sockPuller
+  :: (KnownSymbol chan, Serialize a)
+  => Proxy (chan ::: a)
+  -> Socket z Pull
+  -> Producer a (ZMQ z) ()
+sockPuller _ pull = do
+  forever $ do
+    bs <- lift $ ZMQ.receive pull
+    yield (bs ^?! to decode . _Right)
+
+sockPusher :: (Serialize a) => Socket z Push -> Consumer a (ZMQ z) ()
+sockPusher push = forever $ do
+  a <- await
+  lift $ ZMQ.send push [] $ encode a
+
+nodeChannel :: (KnownSymbol chan) => Proxy chan -> String
 nodeChannel = symbolVal
 
+subChannel :: (KnownSymbol chan) => Proxy chan -> ByteString
+subChannel = view packedChars . nodeChannel
 --------------------------------------------------------------------------------
 class ZMQIngester api where
   type IngestClientT api (m :: * -> *) :: *
@@ -131,13 +144,13 @@ instance (Typeable a, Serialize a, KnownSymbol name , api ~ (name ::: (a :: *)))
     sock <- ZMQ.socket Sub -- ZMQ.async (go s)
     -- ZMQ.subscribe sock (nodeChannel (Proxy :: Proxy name) ^. packedChars)
     ZMQ.connect sock s
-    return $ mkProducer sock pChan
+    return $ sockSubscriber sock pChan
 
-  client (Proxy :: Proxy (name ::: a)) is = do
+  client p is = do
     let s = is ^. sendTo
     sock <- ZMQ.socket Pub -- ZMQ.async (go s)
     ZMQ.connect sock s
-    return $ sockConsumer sock (Proxy :: Proxy name)
+    return $ sockPublisher sock p
 
 instance (ZMQIngester a, ZMQIngester b) => ZMQIngester (a :<|> b) where
   type IngestClientT (a :<|> b) m = IngestClientT a m :<|> IngestClientT b m
