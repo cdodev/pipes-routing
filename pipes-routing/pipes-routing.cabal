@@ -20,7 +20,6 @@ library
                        Pipes.Routing.Process
                        Pipes.Routing.Network
                        Pipes.Routing.Ingest
-                       Pipes.Routing.Operations
                        Pipes.Routing.HMap
                        Pipes.Routing
                        Control.Monad.Indexed.State
