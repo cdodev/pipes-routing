@@ -31,9 +31,6 @@ import           Servant
 import           System.ZMQ4.Monadic      (Socket, XPub, ZMQ)
 import qualified System.ZMQ4.Monadic      as ZMQ
 
-
-import           Pipes.Routing.Network
-
 newtype PubState s z a =
   PubState { unPubState :: StateT s (ZMQ z) a }
   deriving (Functor, Applicative, Monad, MonadIO, MonadState s)
@@ -42,39 +39,39 @@ newtype PubState s z a =
 runPubState :: s -> PubState s z a -> ZMQ z a
 runPubState s = flip evalStateT s . unPubState
 
-class HasNetwork api => ZMQPublisher api where
-  zmqPublisher :: Network api -> PubState (Socket z XPub) z (Async ())
+-- class HasNetwork api => ZMQPublisher api where
+--   zmqPublisher :: Network api -> PubState (Socket z XPub) z (Async ())
 
-instance (Typeable a, Serialize a, KnownSymbol name
-         , HasNetwork api, api ~ (name ::: (a :: *)))
-  => ZMQPublisher api where
-  zmqPublisher (NetworkLeaf n) = do
-    s <- get
-    (node :: Node name a) <- liftIO n
-    PubState . lift $ connectNode s node
+-- instance (Typeable a, Serialize a, KnownSymbol name
+--          , HasNetwork api, api ~ (name ::: (a :: *)))
+--   => ZMQPublisher api where
+--   zmqPublisher (NetworkLeaf n) = do
+--     s <- get
+--     (node :: Node name a) <- liftIO n
+--     PubState . lift $ connectNode s node
 
-instance (ZMQPublisher a, ZMQPublisher b) => ZMQPublisher (a :<|> b) where
-  zmqPublisher (NetworkAlt (a :<|> b)) = do
-    ta <- za
-    tb <- zb
-    liftIO (Async.async (const () <$> Async.waitBoth ta tb))
-    where
-      za = zmqPublisher a
-      zb = zmqPublisher b
+-- instance (ZMQPublisher a, ZMQPublisher b) => ZMQPublisher (a :<|> b) where
+--   zmqPublisher (NetworkAlt (a :<|> b)) = do
+--     ta <- za
+--     tb <- zb
+--     liftIO (Async.async (const () <$> Async.waitBoth ta tb))
+--     where
+--       za = zmqPublisher a
+--       zb = zmqPublisher b
 
-connectNode :: Serialize a => Socket z XPub -> Node chan a -> ZMQ z (Async ())
-connectNode s n = ZMQ.async go
-  where
-  go = do
-    msg <- liftIO $ atomically $ recv (n ^. nodeOut)
-    case msg of
-      Just m -> do
-        ZMQ.send s [] $ encode m
-        go
-      Nothing -> return ()
+-- connectNode :: Serialize a => Socket z XPub -> Node chan a -> ZMQ z (Async ())
+-- connectNode s n = ZMQ.async go
+--   where
+--   go = do
+--     msg <- liftIO $ atomically $ recv (n ^. nodeOut)
+--     case msg of
+--       Just m -> do
+--         ZMQ.send s [] $ encode m
+--         go
+--       Nothing -> return ()
 
-runPublisher :: (ZMQPublisher api, MonadIO m) => Network api -> m ()
-runPublisher n =  ZMQ.runZMQ $ do
-  s <- ZMQ.socket ZMQ.XPub
-  a <- runPubState s (zmqPublisher n)
-  liftIO $ Async.wait a
+-- runPublisher :: (ZMQPublisher api, MonadIO m) => Network api -> m ()
+-- runPublisher n =  ZMQ.runZMQ $ do
+--   s <- ZMQ.socket ZMQ.XPub
+--   a <- runPubState s (zmqPublisher n)
+--   liftIO $ Async.wait a
