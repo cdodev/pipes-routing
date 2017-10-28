@@ -54,7 +54,7 @@ import           Pipes.Routing.Types
 
 --------------------------------------------------------------------------------
 type family ProcessInputs (api :: *) (chan :: k) :: [*] where
-  ProcessInputs api (a :<+> b) = a ::: (ChannelType a api) ': ProcessInputs api b
+  ProcessInputs api (a :<+> b) = (a ::: (ChannelType a api)) ': ProcessInputs api b
   ProcessInputs api chan = '[chan ::: ChannelType chan api]
 
 
@@ -66,106 +66,97 @@ type family HasFields (chans :: [*]) record b :: Constraint where
   HasFields '[] _ _ = ()
 
 --------------------------------------------------------------------------------
-newtype Joiner fields out r = Joiner r deriving (Generic)
+data Joiner fields out = forall r .
+  ( HasFields fields r out
+  , Generic r
+  ) => Joiner { joinRecords :: r }
 
-makeWrapped ''Joiner
 
 --------------------------------------------------------------------------------
 mkProcessor
-  :: (MonadReader r m, HasIngestSettings r
-     , KnownSymbol subChan, KnownSymbol pushChan, Serialize a, Serialize b)
-  => Proxy (subChan ::: a) -> Proxy (pushChan ::: b) -> (a -> b) -> m (ZMQ z (Async ()))
-mkProcessor pSubChan pFanInChan f = do
-  subAddr <- view recvFrom
-  return $ do
-    sub <- socket Sub
-    ZMQ.connect sub subAddr
-    push <- socket Push
-    ZMQ.connect push pushConn
-    let subP = sockSubscriber sub pSubChan
-        pushC = sockPusher push
-    async $ runEffect $ subP >-> P.map f >-> pushC
+  :: (KnownSymbol subChan, KnownSymbol pushChan, Serialize a, Serialize b)
+  => IngestSettings -> Proxy (subChan ::: a) -> Proxy (pushChan ::: b) -> (a -> b) -> ZMQ z (Async ())
+mkProcessor s pSubChan pFanInChan f = do
+  let subAddr = s ^. recvFrom
+  sub <- socket Sub
+  ZMQ.connect sub subAddr
+  push <- socket Push
+  ZMQ.connect push pushConn
+  let subP = sockSubscriber sub pSubChan
+      pushC = sockPusher push
+  async $ runEffect $ subP >-> P.map f >-> pushC
   where
     pushConn = "inproc://" ++ (nodeChannel $ chanP pFanInChan)
 
-class MkFaninProcessor chans b pushChan r where
+class MkFaninProcessor chans b pushChan where
   runFanin
-    ::(MonadReader s m, KnownSymbol pushChan, HasIngestSettings s, HasFields chans r b
-      , Serialize a, Serialize b, Generic r)
-    => Proxy chans -> Proxy (pushChan ::: b) -> r -> m (ZMQ z (Async ()))
+    ::( KnownSymbol pushChan
+      , Serialize b)
+    => IngestSettings -> Proxy chans -> Proxy (pushChan ::: b) -> Joiner chans b -> ZMQ z (Async ())
 
-instance MkFaninProcessor '[] b  pushChan r where
-  runFanin _ _ _ = return (async (return ()))
+instance MkFaninProcessor '[] b  pushChan where
+  runFanin _ _ _ _ = (async (return ()))
 
-instance (KnownSymbol subChan, Serialize a, Serialize b
-         , HasField subChan (a -> b) r
-         , HasFields rest r b
-         , MkFaninProcessor rest b pushChan r)
-  => MkFaninProcessor (subChan ::: a ': rest) b pushChan r where
-  runFanin (Proxy :: Proxy (subChan ::: a ': rest))
+instance forall subChan a b rest pushChan.
+         ( KnownSymbol subChan, Serialize a, Serialize b
+         , MkFaninProcessor rest b pushChan
+         )
+  => MkFaninProcessor (subChan ::: a ': rest) b pushChan where
+  runFanin s (Proxy :: Proxy (subChan ::: a ': rest))
            pPushChan
-           r = do
-    mkProcessor pSubChan pPushChan (getField @subChan r)
-    -- runFanin pRest pPushChan r
+           joiner = do
+    mkProcessor s pSubChan pPushChan (getField @subChan joiner)
+    runFanin s pRest pPushChan joiner
     where
       pSubChan = Proxy :: Proxy (subChan ::: a)
       pRest  = Proxy :: Proxy rest
 --------------------------------------------------------------------------------
 class HasProcessor (api :: *) processor where
   type ProcessorT api processor (m :: * -> *) :: *
-  data JoinerT api processor j :: *
-  process :: Proxy api -> JoinerT api processor j -> ZMQ z (Processor api processor z)
+  data JoinerT api processor :: *
+  process
+    :: IngestSettings -> Proxy api -> JoinerT api processor -> ZMQ z (Processor api processor z)
   -- process ::
 
 type Processor api processor z = ProcessorT api processor (ZMQ z)
 
 --------------------------------------------------------------------------------
-instance (Serialize out, KnownSymbol chan) => HasProcessor api (l :-> chan ::: (out :: *)) where
+instance
+  ( Serialize out, KnownSymbol chan
+  , MkFaninProcessor (ProcessInputs api l) out chan
+  )
+  => HasProcessor api (l :-> chan ::: (out :: *)) where
   type ProcessorT api (l :-> chan ::: out) m = Producer out m ()
-  data JoinerT api (l :-> (chan ::: out)) r = Node (Joiner (l :-> (chan ::: out)) out r)
-  process pApi (Node (joiner :: Joiner (l :-> chan ::: out) out r)) = do
+  data JoinerT api (l :-> (chan ::: out)) = Node (Joiner (ProcessInputs api l) out)
+  process s _pApi (Node ((Joiner joiner) :: Joiner (ProcessInputs api l) out )) = do
     pull <- socket Pull
     ZMQ.bind pull pullConn
-    -- runFanin 
+    runFanin s pJoinChans pFanInChan joiner
     return $ sockPuller pFanInChan pull
     where
+      pJoinChans = Proxy :: Proxy ((ProcessInputs api l))
       pullConn = "inproc://" ++ (nodeChannel $ chanP pFanInChan)
       pFanInChan = Proxy :: Proxy (chan ::: out)
-      mkFanIn chan = withSomeSing chan $ \(singChan :: SSymbol c) -> do
-        undefined
-        -- mkProcessor pChan pFanInChan (joiner ^. _Wrapped' . field @c)
-
-        where
-          pChan = Proxy :: Proxy (c ::: ChannelType c api)
 
 instance (HasProcessor api l, HasProcessor api r) => HasProcessor api (l :<|> r) where
   type ProcessorT api (l :<|> r) m = ProcessorT api l m :<|> ProcessorT api r m
-  data JoinerT api (l :<|> r) j = Alt (JoinerT api l j :<|> JoinerT api r j)
-  process pApi (Alt (l :<|> r)) = do
+  data JoinerT api (l :<|> r) = Alt (JoinerT api l :<|> JoinerT api r)
+  process s pApi (Alt (l :<|> r)) = do
     ta <- pa
     tb <- pb
     return $ ta :<|> tb
     where
-      pa = process pApi l
-      pb = process pApi r
+      pa = process s pApi l
+      pb = process s pApi r
 
-data Ext = Ext {
-    a :: Int -> String
-  , b :: String -> String
-  , c :: Double -> String
-  } deriving (Generic)
 
-type API = ("a" ::: Int :<|> "b" ::: String)
-type Fs = ProcessInputs API ("a" :<+> "b")
+data IA = IA { int :: Int -> (Int, Int) } deriving Generic
 
-type A = HasFields Fs Ext String
+ia = IA $ \(i :: Int) -> (i, i + 10)
 
-makeProc
-  :: forall record fld . (HasFields Fs record String, HasField fld (Int -> String) record, Generic record)
-  => Proxy fld -> record -> Int -> String
-makeProc _ r i = getField @fld r i
+iaj :: Joiner '["int" ::: Int] (Int, Int)
+iaj = Joiner ia
 
-s = makeProc (Proxy :: Proxy "a") (Ext show id show)
 -- chanSym :: (KnownSymbol chan) =>  proxy chan -> Int
 -- chanSym s = withSomeSing s $ \ sc -> withKnownSymbol sc _
 
