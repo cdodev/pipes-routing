@@ -71,12 +71,18 @@ data Joiner fields out = forall r .
   , Generic r
   ) => Joiner { joinRecords :: r }
 
+retagJoiner :: Joiner (chan ': rest) out -> Joiner rest out
+retagJoiner (Joiner r) = Joiner r
 
 --------------------------------------------------------------------------------
 mkProcessor
   :: (KnownSymbol subChan, KnownSymbol pushChan, Serialize a, Serialize b)
   => IngestSettings -> Proxy (subChan ::: a) -> Proxy (pushChan ::: b) -> (a -> b) -> ZMQ z (Async ())
 mkProcessor s pSubChan pFanInChan f = do
+  -- liftIO $ putStrLn ( "mkProcessor "
+                      -- ++ (nodeChannel $ chanP pFanInChan)
+                      -- ++ " <- "
+                      -- ++ (nodeChannel $ chanP pSubChan))
   let subAddr = s ^. recvFrom
   sub <- socket Sub
   ZMQ.connect sub subAddr
@@ -104,12 +110,14 @@ instance forall subChan a b rest pushChan.
   => MkFaninProcessor (subChan ::: a ': rest) b pushChan where
   runFanin s (Proxy :: Proxy (subChan ::: a ': rest))
            pPushChan
-           joiner = do
-    mkProcessor s pSubChan pPushChan (getField @subChan joiner)
-    runFanin s pRest pPushChan joiner
+           joiner@(Joiner r) = do
+    -- liftIO $ putStrLn ("runFanin " ++ symbolVal (Proxy :: Proxy subChan))
+    mkProcessor s pSubChan pPushChan (getField @subChan r)
+    runFanin s pRest pPushChan (retagJoiner joiner)
     where
       pSubChan = Proxy :: Proxy (subChan ::: a)
       pRest  = Proxy :: Proxy rest
+
 --------------------------------------------------------------------------------
 class HasProcessor (api :: *) processor where
   type ProcessorT api processor (m :: * -> *) :: *
@@ -128,11 +136,17 @@ instance
   => HasProcessor api (l :-> chan ::: (out :: *)) where
   type ProcessorT api (l :-> chan ::: out) m = Producer out m ()
   data JoinerT api (l :-> (chan ::: out)) = Node (Joiner (ProcessInputs api l) out)
-  process s _pApi (Node ((Joiner joiner) :: Joiner (ProcessInputs api l) out )) = do
+  process s _pApi (Node joiner) = do
     pull <- socket Pull
     ZMQ.bind pull pullConn
     runFanin s pJoinChans pFanInChan joiner
-    return $ sockPuller pFanInChan pull
+    sock <- ZMQ.socket Pub -- ZMQ.async (go s)
+    ZMQ.connect sock (s ^. sendTo)
+    let p = sockPuller pFanInChan pull
+        pub = sockPublisher sock pFanInChan
+    return $ for p $ \i -> do
+      lift $ runEffect $ (yield i) >-> pub
+      yield i
     where
       pJoinChans = Proxy :: Proxy ((ProcessInputs api l))
       pullConn = "inproc://" ++ (nodeChannel $ chanP pFanInChan)
