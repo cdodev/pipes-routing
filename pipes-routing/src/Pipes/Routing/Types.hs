@@ -42,12 +42,17 @@ data a :<+> b deriving Typeable
 
 infixr 8 :<+>
 
+-- data api :=> processor deriving Typeable
 --------------------------------------------------------------------------------
 data (chanName :: k) :-> b
      deriving Typeable
 
 infixr 8 :->
 --------------------------------------------------------------------------------
+-- type family HasChan (chan :: k) api :: Constraint where
+--   HasChan c (c ::: a) = ()
+--   HasChan (ChanName c) a = HasChan c a
+--   HasChan c (a :<|> b) = Or (HasChan c a) (HasChan c b)
 
 type family ChannelType (chan :: k) api :: * where
   ChannelType c (c ::: a) = a
