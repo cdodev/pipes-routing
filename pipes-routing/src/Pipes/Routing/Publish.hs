@@ -26,21 +26,43 @@ import           Control.Monad.State      (MonadState, StateT (..), evalStateT,
 import           Data.Serialize           (Serialize, encode)
 import           Data.Typeable            (Typeable)
 import           GHC.TypeLits
-import           Pipes.Concurrent
+import           Pipes (Producer)
 import           Servant
-import           System.ZMQ4.Monadic      (Socket, XPub, ZMQ)
+import           System.ZMQ4.Monadic      (Socket, XPub, ZMQ, Sub(Sub))
 import qualified System.ZMQ4.Monadic      as ZMQ
 
-newtype PubState s z a =
-  PubState { unPubState :: StateT s (ZMQ z) a }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadState s)
+import Pipes.Routing.Types
+import Pipes.Routing.Ingest
 
+class ZMQPublisher api (chan :: k) where
+  type PublisherT api chan (m :: * -> *) :: *
+  getPublisher
+    :: IngestSettings
+    -> Proxy api
+    -> Proxy chan
+    -> ZMQ z (Publisher api chan z)
 
-runPubState :: s -> PubState s z a -> ZMQ z a
-runPubState s = flip evalStateT s . unPubState
+type Publisher api chan z = PublisherT api chan (ZMQ z)
 
--- class HasNetwork api => ZMQPublisher api where
---   zmqPublisher :: Network api -> PubState (Socket z XPub) z (Async ())
+instance (ChannelType chan api ~ out, Serialize out, KnownSymbol chan) => ZMQPublisher api chan where
+  type PublisherT api chan m = Producer (ChannelType chan api) m ()
+  getPublisher s _pApi _pChan = do
+    sock <- ZMQ.socket Sub
+    ZMQ.connect sock (s ^. recvFrom)
+    return $ sockSubscriber sock pApi
+    where
+    pApi = Proxy :: Proxy (chan ::: ChannelType chan api)
+
+instance (ZMQPublisher api l, ZMQPublisher api r) => ZMQPublisher api (l :<|> r) where
+  type PublisherT api (l :<|> r) m = PublisherT api l m :<|> PublisherT api r m
+  getPublisher s pApi _pChan = do
+    pl <- getPublisher s pApi pL
+    pr <- getPublisher s pApi pR
+    return $ pl :<|> pr
+    where
+      pL = Proxy :: Proxy l
+      pR = Proxy :: Proxy r
+
 
 -- instance (Typeable a, Serialize a, KnownSymbol name
 --          , HasNetwork api, api ~ (name ::: (a :: *)))
