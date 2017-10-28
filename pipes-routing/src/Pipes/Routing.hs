@@ -81,17 +81,7 @@ testJoiner = Alt (eisN :<|> iajN)
 
 main :: IO ()
 main = do
-  a <- ZMQ.runZMQ $ do
-    s <- ZMQ.socket ZMQ.Sub
-    ZMQ.connect s (ingSettings ^. recvFrom)
-    ZMQ.subscribe s "either"
-    liftIO $ putStrLn "subscribed"
-    ZMQ.async $ forever $ do
-      [chan, bs] <- ZMQ.receiveMulti s
-      -- msg <- ZMQ.receive s
-      liftIO $ print (chan, decode bs :: Either String (Either Int String))
-      liftIO $ putStrLn "====================="
-      liftIO (threadDelay 1000)
+  -- a <- ZMQ.runZMQ $ do
   r <- ZMQ.runZMQ $ do
     r' <- makeZMQRouter ingSettings
     liftIO $ putStrLn "made router"
@@ -103,9 +93,13 @@ main = do
     liftIO $ putStrLn "made client"
     liftIO (threadDelay 10000)
     eisProc :<|> iiProc <- process ingSettings testApi testJoiner
-    ZMQ.async $ runEffect (i >-> P.map ("int",) >-> P.print)
-    ZMQ.async $ runEffect (str >-> P.map ("str: " ++) >-> P.stdoutLn)
-    ZMQ.async $ runEffect (th >-> P.print)
+    s <- ZMQ.socket ZMQ.Sub
+    ZMQ.connect s (ingSettings ^. recvFrom)
+    ZMQ.subscribe s "either-int-string"
+    liftIO $ putStrLn "subscribed"
+    -- ZMQ.async $ runEffect (i >-> P.map ("int",) >-> P.print)
+    -- ZMQ.async $ runEffect (str >-> P.map ("str: " ++) >-> P.stdoutLn)
+    -- ZMQ.async $ runEffect (th >-> P.print)
     runEffect (P.each [1..5] >-> sendInt)
     liftIO (threadDelay 1000)
     runEffect (P.each ["test", "test2"] >-> sendStr)
@@ -115,6 +109,13 @@ main = do
     runEffect (P.each [10..15] >-> sendInt)
     liftIO (threadDelay 10000)
     ZMQ.async $ runEffect $ eisProc >-> P.print
+    liftIO (threadDelay 10000)
+    ZMQ.async $ forever $ do
+      [chan, bs] <- ZMQ.receiveMulti s
+      -- msg <- ZMQ.receive s
+      liftIO $ print (chan, decode bs :: Either String (Either Int String))
+      liftIO $ putStrLn "====================="
+      liftIO (threadDelay 1000)
     -- liftIO (threadDelay 10000)
     -- runEffect $ iiProc >-> P.print
     return r'

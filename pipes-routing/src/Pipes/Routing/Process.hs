@@ -142,6 +142,7 @@ instance
     runFanin s pJoinChans pFanInChan joiner
     sock <- ZMQ.socket Pub -- ZMQ.async (go s)
     ZMQ.connect sock (s ^. sendTo)
+    liftIO $ putStrLn ("process faninchan: " ++ (nodeChannel $ chanP pFanInChan))
     let p = sockPuller pFanInChan pull
         pub = sockPublisher sock pFanInChan
     return $ for p $ \i -> do
