@@ -20,7 +20,6 @@ module Pipes.Routing.Ingest where
 
 import           Control.Concurrent       (threadDelay)
 import           Control.Concurrent.Async (Async)
-import qualified Control.Concurrent.Async as Async
 import           Control.Lens
 import           Control.Monad.IO.Class   (MonadIO, liftIO)
 import           Control.Monad.Reader
@@ -32,8 +31,8 @@ import           Data.Typeable            (Typeable)
 import           GHC.TypeLits
 import           Pipes                    (Consumer, Producer, await, yield)
 import           Servant
-import           System.ZMQ4.Monadic      (Pub (Pub), Pull (Pull), Push (Push),
-                                           Sender, Socket, Sub (Sub),
+import           System.ZMQ4.Monadic      (Pub (Pub), Pull, Push,
+                                           Socket, Sub (Sub),
                                            XPub (XPub), XSub (XSub), ZMQ)
 import qualified System.ZMQ4.Monadic      as ZMQ
 
