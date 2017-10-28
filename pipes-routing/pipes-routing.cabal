@@ -18,7 +18,6 @@ library
   exposed-modules:     Pipes.Routing.Types
                        Pipes.Routing.Publish
                        Pipes.Routing.Process
-                       Pipes.Routing.Network
                        Pipes.Routing.Ingest
                        Pipes.Routing.HMap
                        Pipes.Routing
