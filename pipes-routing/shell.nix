@@ -1,16 +1,3 @@
-{ nixpkgs ? import <nixpkgs> {}, compiler ? "default" }:
+{ nixpkgs ? import <nixpkgs> {}, haskell ? import <haskell> {} }:
 
-let
-
-  inherit (nixpkgs) pkgs;
-
-  f = self.callPackage ./default.nix {};
-  haskellPackages = if compiler == "default"
-                       then pkgs.haskellPackages
-                       else pkgs.haskell.packages.${compiler};
-
-  drv = haskellPackages.callPackage f {};
-
-in
-
-  if pkgs.lib.inNixShell then drv.env else drv
+haskell.pipes-routing
