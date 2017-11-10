@@ -31,9 +31,9 @@ import           Data.Typeable            (Typeable)
 import           GHC.TypeLits
 import           Pipes                    (Consumer, Producer, await, yield)
 import           Servant
-import           System.ZMQ4.Monadic      (Pub (Pub), Pull, Push,
-                                           Socket, Sub (Sub),
-                                           XPub (XPub), XSub (XSub), ZMQ)
+import           System.ZMQ4.Monadic      (Pub (Pub), Pull, Push, Socket,
+                                           Sub (Sub), XPub (XPub), XSub (XSub),
+                                           ZMQ)
 import qualified System.ZMQ4.Monadic      as ZMQ
 
 
@@ -50,15 +50,15 @@ makeClassy ''IngestSettings
 
 --------------------------------------------------------------------------------
 data ZMQRouter = ZMQRouter {
-    _ports  :: IngestSettings
-  , _router :: Async ()
+    _rSettings :: IngestSettings
+  , _router    :: Async ()
   }
 
 
 makeClassy ''ZMQRouter
 
 instance HasIngestSettings ZMQRouter where
-  ingestSettings = ports
+  ingestSettings = rSettings
 
 makeZMQRouter :: IngestSettings -> ZMQ z ZMQRouter
 makeZMQRouter ingestPorts = ZMQRouter ingestPorts <$> mkRouter

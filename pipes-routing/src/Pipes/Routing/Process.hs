@@ -1,41 +1,42 @@
-{-# LANGUAGE AllowAmbiguousTypes   #-}
-{-# LANGUAGE ConstraintKinds       #-}
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE QuasiQuotes           #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TemplateHaskell       #-}
-{-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE AllowAmbiguousTypes       #-}
+{-# LANGUAGE ConstraintKinds           #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE PolyKinds                 #-}
+{-# LANGUAGE QuasiQuotes               #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE TupleSections             #-}
+{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE UndecidableInstances      #-}
 {-# OPTIONS_GHC -Wall #-}
 module Pipes.Routing.Process where
 
-import           Control.Concurrent.Async    (Async)
+import           Control.Concurrent.Async (Async)
 import           Control.Lens
 import           Control.Monad.Reader
-import           Data.Serialize              (Serialize)
+import           Data.Serialize           (Serialize)
 -- import Data.Functor.Contravariant
 import           Data.Generics.Product
 import           Data.Kind
-import           Data.Proxy                  (Proxy (..))
+import           Data.Proxy               (Proxy (..))
 -- import Data.Kind
-import           GHC.Generics
-import           GHC.TypeLits                (KnownSymbol, Symbol)
-import           Pipes                       hiding (Proxy)
-import qualified Pipes.Prelude               as P
+import           GHC.Generics             (Generic)
+import           GHC.TypeLits             (KnownSymbol, Symbol)
+import           Pipes                    hiding (Proxy)
+import qualified Pipes.Prelude            as P
 import           Servant.API
-import           System.ZMQ4.Monadic         as ZMQ
+import           System.ZMQ4.Monadic      as ZMQ
 
 import           Pipes.Routing.Ingest
 import           Pipes.Routing.Types
@@ -56,6 +57,11 @@ type family HasFields (chans :: [*]) record b :: Constraint where
   HasFields '[] _ _ = ()
 
 --------------------------------------------------------------------------------
+type family AllSerializable (api :: *) :: Constraint where
+  AllSerializable (_ ::: a) = Serialize a
+  AllSerializable (l :<|> r) = (AllSerializable l, AllSerializable r)
+
+--------------------------------------------------------------------------------
 data Joiner fields out = forall r .
   ( HasFields fields r out
   , Generic r
@@ -67,7 +73,11 @@ retagJoiner (Joiner r) = Joiner r
 --------------------------------------------------------------------------------
 mkProcessor
   :: (KnownSymbol subChan, KnownSymbol pushChan, Serialize a, Serialize b)
-  => IngestSettings -> Proxy (subChan ::: a) -> Proxy (pushChan ::: b) -> (a -> b) -> ZMQ z (Async ())
+  => IngestSettings
+  -> Proxy (subChan ::: a)
+  -> Proxy (pushChan ::: b)
+  -> (a -> b)
+  -> ZMQ z (Async ())
 mkProcessor s pSubChan pFanInChan f = do
   -- liftIO $ putStrLn ( "mkProcessor "
                       -- ++ (nodeChannel $ chanP pFanInChan)
@@ -84,11 +94,15 @@ mkProcessor s pSubChan pFanInChan f = do
   where
     pushConn = "inproc://" ++ (nodeChannel $ chanP pFanInChan)
 
+--------------------------------------------------------------------------------
 class MkFaninProcessor chans b pushChan where
   runFanin
-    ::( KnownSymbol pushChan
-      , Serialize b)
-    => IngestSettings -> Proxy chans -> Proxy (pushChan ::: b) -> Joiner chans b -> ZMQ z (Async ())
+    ::( KnownSymbol pushChan , Serialize b)
+    => IngestSettings
+    -> Proxy chans
+    -> Proxy (pushChan ::: b)
+    -> Joiner chans b
+    -> ZMQ z (Async ())
 
 instance MkFaninProcessor '[] b  pushChan where
   runFanin _ _ _ _ = (async (return ()))
@@ -267,3 +281,28 @@ iaj = Joiner ia
 --  -- onEvent :: (Monad m) => IndexSubscription c -> EventPipe c m
 -- -- onEvent AllEvents = cat
 -- -- onEvent (ForSuite rid) = undefined
+
+--------------------------------------------------------------------------------
+-- subscribeToApi
+--   :: forall api chans z b.
+--      (Serialize b, AllSerializable api, SingI (Chans api), ChannelList api ~ chans)
+--   => Socket z Sub
+--   -> Proxy (api :: *)
+--   -> Joiner chans b
+--   -> Producer b (ZMQ z) ()
+-- subscribeToApi sub pApi joiner@(Joiner j) = do
+--   lift $ forM_ subChans (ZMQ.subscribe sub)
+--   forever $ do
+--     [chan', bs] <- lift $ ZMQ.receiveMulti sub
+--     let (chan :: Text) = undefined
+--     withSomeSing chan $ \(sc :: SSymbol s) ->
+--       case decodeChan pApi (Proxy :: Proxy s) bs of
+--         Left e -> liftIO $ print e
+--         Right a -> yield (getField @s j $ a)
+--     -- liftIO $ print (chan, bs)
+--     -- yield (bs ^?! to decode . _Right)
+--   where
+--     subChans = (channelList pApi) ^.. traversed . re utf8
+
+-- decodeChan :: (AllSerializable api, ChannelType chan api ~ a, Serialize a) => Proxy api -> Proxy chan -> ByteString -> Either String a
+-- decodeChan pApi pChan bs = decode bs

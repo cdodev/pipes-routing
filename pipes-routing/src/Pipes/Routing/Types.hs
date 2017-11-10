@@ -1,16 +1,17 @@
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DeriveDataTypeable         #-}
-{-# LANGUAGE ExistentialQuantification  #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE PolyKinds                  #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveDataTypeable        #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE PolyKinds                 #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE TupleSections             #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE UndecidableInstances      #-}
 {-# OPTIONS_GHC -Wall #-}
 module Pipes.Routing.Types (
     (:::)
@@ -18,18 +19,25 @@ module Pipes.Routing.Types (
   , chanP
   , (:<+>)
   , (:->)
-  , ChannelList
+  , ChannelList, channelList
+  , Chans
   , ChannelType
   , module Servant.API.Alternative
   ) where
 
-import           Data.Typeable        (Typeable)
+import           Data.Typeable                (Typeable)
+import           GHC.TypeLits
+import           Servant
 import           Servant.API.Alternative
-import Servant
-import Data.Singletons.TH
+-- import Data.Kind
+import           Data.Serialize               (Serialize)
+import           Data.Singletons
+import           Data.Singletons.Prelude.List (Map)
+import           Data.Singletons.TH
+import           Data.Text                    (Text)
 
 $(singletons [d|
-  data (chan :: k) ::: a
+  data (Serialize a) => (chan :: k) ::: a
       deriving (Typeable)
   -- infixr 4 :::
 
@@ -48,17 +56,33 @@ data (chanName :: k) :-> b
      deriving Typeable
 
 infixr 8 :->
+
 --------------------------------------------------------------------------------
--- type family HasChan (chan :: k) api :: Constraint where
---   HasChan c (c ::: a) = ()
---   HasChan (ChanName c) a = HasChan c a
---   HasChan c (a :<|> b) = Or (HasChan c a) (HasChan c b)
+type family ChanName (someChan :: *) :: Symbol where
+  ChanName (chan ::: _) = chan
+
+data SChanName (chan :: TyFun * Symbol)
+
+type instance Apply SChanName chan = ChanName chan
+
+type Chans api = Map SChanName (ChannelList api)
 
 type family ChannelType (chan :: k) api :: * where
   ChannelType c (c ::: a) = a
   ChannelType c ((c ::: a) :<|> _) = a
   ChannelType c (_ :<|> a) = ChannelType c a
 
-type family ChannelList (api :: *) :: [*] where
+type family CombineApis (l :: *) (r :: *) :: * where
+  CombineApis () r = r
+  CombineApis l () = l
+  CombineApis l r  = l :<|> r
+--------------------------------------------------------------------------------
+type family ChannelList (api :: k) :: [*] where
   ChannelList (c ::: a) = '[c ::: a]
   ChannelList (c ::: a :<|> rest) = (c ::: a) ': (ChannelList rest)
+
+--------------------------------------------------------------------------------
+channelList :: forall api . (SingI (Chans api)) => Proxy api -> [Text]
+channelList _ = fromSing $ singByProxy pChans
+  where
+    pChans = Proxy :: Proxy (Chans api)
