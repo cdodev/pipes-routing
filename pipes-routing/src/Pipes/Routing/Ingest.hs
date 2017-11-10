@@ -127,7 +127,7 @@ class ZMQIngester api where
   type IngestClientT api (m :: * -> *) :: *
   type IngestNodeT api (m :: * -> *) :: *
   zmqIngester :: Proxy api -> (ZMQRouter r) -> ZMQ z (IngestNode api z)
-  client :: Proxy api -> (ZMQRouter r) -> ZMQ z (IngestClient api z)
+  client :: ZMQRouter api -> ZMQ z (IngestClient api z)
 
 type IngestNode api z = IngestNodeT api (ZMQ z)
 type IngestClient api z = IngestClientT api (ZMQ z)
@@ -147,11 +147,12 @@ instance (Typeable a, Serialize a, KnownSymbol name , api ~ (name ::: (a :: *)))
     ZMQ.connect sock s
     return $ sockSubscriber sock pChan
 
-  client p is = do
-    let s = is ^. sendTo
+  client zmqRouter = do
+    let s = zmqRouter ^. sendTo
     sock <- ZMQ.socket Pub -- ZMQ.async (go s)
     ZMQ.connect sock s
-    return $ sockPublisher sock p
+    return $ sockPublisher sock pApi
+    where pApi = Proxy :: Proxy api
 
 instance (ZMQIngester a, ZMQIngester b) => ZMQIngester (a :<|> b) where
   type IngestClientT (a :<|> b) m = IngestClientT a m :<|> IngestClientT b m
@@ -163,9 +164,9 @@ instance (ZMQIngester a, ZMQIngester b) => ZMQIngester (a :<|> b) where
     where
       za = zmqIngester (Proxy :: Proxy a) zmqRouter
       zb = zmqIngester (Proxy :: Proxy b) zmqRouter
-  client (Proxy :: Proxy (a :<|> b)) zmqRouter = do
-    ca <- client (Proxy :: Proxy a) zmqRouter
-    cb <- client (Proxy :: Proxy b) zmqRouter
+  client (zmqRouter :: ZMQRouter (a :<|> b)) = do
+    ca <- client ((retagRouter zmqRouter) :: ZMQRouter a)
+    cb <- client ((retagRouter zmqRouter) :: ZMQRouter b)
     return (ca :<|> cb)
 
 
@@ -178,12 +179,11 @@ mkIngester
 mkIngester pApi zmqRouter = (retagRouter zmqRouter,) <$> zmqIngester pApi zmqRouter
 
 
-mkClient
-  :: (ZMQIngester api)
-  => Proxy api
-  -> ZMQRouter r
-  -> ZMQ z (ZMQRouter b, IngestClientT api (ZMQ z))
-mkClient pApi zmqRouter = (retagRouter zmqRouter,) <$> client pApi zmqRouter
+-- mkClient
+--   :: (ZMQIngester api)
+--   => ZMQRouter api
+--   -> ZMQ z (ZMQRouter b, IngestClientT api (ZMQ z))
+-- mkClient zmqRouter = client zmqRouter
 -- unpack :: Network api -> IO a
 -- unpack (NetworkLeaf n) = n
 -- unpack (NetworkAlt (a :<|> b)) = do

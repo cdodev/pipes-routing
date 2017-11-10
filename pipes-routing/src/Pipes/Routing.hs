@@ -89,10 +89,10 @@ main = do
     liftIO $ putStrLn "made ingester"
     -- liftIO (runAlt ing)
     liftIO (threadDelay 10000)
-    (rc, sendInt :<|> sendStr :<|> sendThing) <- mkClient testApi ri
+    sendInt :<|> sendStr :<|> sendThing <- client ri
     liftIO $ putStrLn "made client"
     liftIO (threadDelay 10000)
-    eisProc :<|> iiProc <- process ingSettings testApi testJoiner
+    eisProc :<|> iiProc <- process ri testJoiner
     s <- ZMQ.socket ZMQ.Sub
     ZMQ.connect s (ingSettings ^. recvFrom)
     ZMQ.subscribe s "either-int-string"
