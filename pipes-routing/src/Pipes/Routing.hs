@@ -85,11 +85,11 @@ main = do
   r <- ZMQ.runZMQ $ do
     r' <- makeZMQRouter ingSettings
     liftIO $ putStrLn "made router"
-    i :<|> str :<|> th <- zmqIngester testApi ingSettings
+    (ri, i :<|> str :<|> th) <- mkIngester testApi r'
     liftIO $ putStrLn "made ingester"
     -- liftIO (runAlt ing)
     liftIO (threadDelay 10000)
-    sendInt :<|> sendStr :<|> sendThing <- client testApi ingSettings
+    (rc, sendInt :<|> sendStr :<|> sendThing) <- mkClient testApi ri
     liftIO $ putStrLn "made client"
     liftIO (threadDelay 10000)
     eisProc :<|> iiProc <- process ingSettings testApi testJoiner

@@ -22,6 +22,7 @@ module Pipes.Routing.Types (
   , ChannelList, channelList
   , Chans
   , ChannelType
+  , CombineApis
   , module Servant.API.Alternative
   ) where
 

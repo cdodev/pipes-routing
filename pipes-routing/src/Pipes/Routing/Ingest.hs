@@ -49,7 +49,7 @@ data IngestSettings = IngestSettings {
 makeClassy ''IngestSettings
 
 --------------------------------------------------------------------------------
-data ZMQRouter = ZMQRouter {
+data ZMQRouter r = ZMQRouter {
     _rSettings :: IngestSettings
   , _router    :: Async ()
   }
@@ -57,10 +57,10 @@ data ZMQRouter = ZMQRouter {
 
 makeClassy ''ZMQRouter
 
-instance HasIngestSettings ZMQRouter where
+instance HasIngestSettings (ZMQRouter r) where
   ingestSettings = rSettings
 
-makeZMQRouter :: IngestSettings -> ZMQ z ZMQRouter
+makeZMQRouter :: IngestSettings -> ZMQ z (ZMQRouter ())
 makeZMQRouter ingestPorts = ZMQRouter ingestPorts <$> mkRouter
   where
     mkRouter = ZMQ.async $ do
@@ -71,9 +71,11 @@ makeZMQRouter ingestPorts = ZMQRouter ingestPorts <$> mkRouter
       ZMQ.proxy sub pub Nothing
       liftIO $ threadDelay 10000
 
-runRouter :: MonadIO m => IngestSettings -> m ZMQRouter
+runRouter :: MonadIO m => IngestSettings -> m (ZMQRouter ())
 runRouter is = ZMQ.runZMQ $ makeZMQRouter is
 
+retagRouter :: ZMQRouter a -> ZMQRouter b
+retagRouter (ZMQRouter s r) = ZMQRouter s r
 --------------------------------------------------------------------------------
 -- LOW LEVEL SOCKET OPS
 sockSubscriber
@@ -124,8 +126,8 @@ subChannel = view packedChars . nodeChannel
 class ZMQIngester api where
   type IngestClientT api (m :: * -> *) :: *
   type IngestNodeT api (m :: * -> *) :: *
-  zmqIngester :: Proxy api -> IngestSettings -> ZMQ z (IngestNode api z)
-  client :: Proxy api -> IngestSettings -> ZMQ z (IngestClient api z)
+  zmqIngester :: Proxy api -> (ZMQRouter r) -> ZMQ z (IngestNode api z)
+  client :: Proxy api -> (ZMQRouter r) -> ZMQ z (IngestClient api z)
 
 type IngestNode api z = IngestNodeT api (ZMQ z)
 type IngestClient api z = IngestClientT api (ZMQ z)
@@ -137,8 +139,8 @@ instance (Typeable a, Serialize a, KnownSymbol name , api ~ (name ::: (a :: *)))
 
   type IngestNodeT (name ::: a) (m :: * -> *) = Producer a m ()
 
-  zmqIngester pChan@(Proxy :: Proxy (name ::: a)) is = do
-    let s = is ^. recvFrom
+  zmqIngester pChan@(Proxy :: Proxy (name ::: a)) zmqRouter = do
+    let s = zmqRouter ^. rSettings.recvFrom
     liftIO . putStrLn $ "Connecting " ++ symbolVal (Proxy :: Proxy name)
     sock <- ZMQ.socket Sub -- ZMQ.async (go s)
     -- ZMQ.subscribe sock (nodeChannel (Proxy :: Proxy name) ^. packedChars)
@@ -154,18 +156,34 @@ instance (Typeable a, Serialize a, KnownSymbol name , api ~ (name ::: (a :: *)))
 instance (ZMQIngester a, ZMQIngester b) => ZMQIngester (a :<|> b) where
   type IngestClientT (a :<|> b) m = IngestClientT a m :<|> IngestClientT b m
   type IngestNodeT (a :<|> b) m = IngestNodeT a m :<|> IngestNodeT b m
-  zmqIngester (Proxy :: Proxy (a :<|> b)) is = do
+  zmqIngester (Proxy :: Proxy (a :<|> b)) zmqRouter = do
     ta <- za
     tb <- zb
     return $ ta :<|> tb
     where
-      za = zmqIngester (Proxy :: Proxy a) is
-      zb = zmqIngester (Proxy :: Proxy b) is
-  client (Proxy :: Proxy (a :<|> b)) is = do
-    ca <- client (Proxy :: Proxy a) is
-    cb <- client (Proxy :: Proxy b) is
+      za = zmqIngester (Proxy :: Proxy a) zmqRouter
+      zb = zmqIngester (Proxy :: Proxy b) zmqRouter
+  client (Proxy :: Proxy (a :<|> b)) zmqRouter = do
+    ca <- client (Proxy :: Proxy a) zmqRouter
+    cb <- client (Proxy :: Proxy b) zmqRouter
     return (ca :<|> cb)
 
+
+--------------------------------------------------------------------------------
+mkIngester
+  :: (ZMQIngester api)
+  => Proxy api
+  -> ZMQRouter r
+  -> ZMQ z (ZMQRouter (CombineApis r api), IngestNodeT api (ZMQ z))
+mkIngester pApi zmqRouter = (retagRouter zmqRouter,) <$> zmqIngester pApi zmqRouter
+
+
+mkClient
+  :: (ZMQIngester api)
+  => Proxy api
+  -> ZMQRouter r
+  -> ZMQ z (ZMQRouter b, IngestClientT api (ZMQ z))
+mkClient pApi zmqRouter = (retagRouter zmqRouter,) <$> client pApi zmqRouter
 -- unpack :: Network api -> IO a
 -- unpack (NetworkLeaf n) = n
 -- unpack (NetworkAlt (a :<|> b)) = do
