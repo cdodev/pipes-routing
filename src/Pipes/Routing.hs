@@ -32,7 +32,6 @@ import           Control.Concurrent
 import           Control.Concurrent.Async
 import           Control.Lens
 import           Control.Monad.Reader
-import           Data.Proxy
 import           Data.Serialize           (Serialize)
 import           Data.Typeable            (Typeable)
 import           GHC.Generics

@@ -26,17 +26,15 @@ module Pipes.Routing.ZMQ (
   ) where
 
 import           Control.Lens
-import           Control.Monad.Reader
-import           Data.ByteString          (ByteString)
-import           Data.ByteString.Lens
-import           Data.List.NonEmpty       (NonEmpty (..))
-import           Data.Serialize           (Serialize, decode, encode)
-import           GHC.TypeLits
-import           Pipes                    (Consumer, Producer, await, yield)
-import           Servant
-import           System.ZMQ4.Monadic      as ZMQ
+import           Control.Monad        (forever)
+import           Data.ByteString      (ByteString)
+import           Data.ByteString.Lens (packedChars)
+import           Data.List.NonEmpty   (NonEmpty (..))
+import           Data.Serialize       (Serialize, decode, encode)
+import           Pipes                (Consumer, Producer, await, lift, yield)
+import           System.ZMQ4.Monadic  as ZMQ
 
-import Pipes.Routing.Types
+import           Pipes.Routing.Types
 
 --------------------------------------------------------------------------------
 sockSubscriber

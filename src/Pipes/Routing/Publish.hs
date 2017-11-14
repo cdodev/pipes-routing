@@ -19,11 +19,9 @@ module Pipes.Routing.Publish (
   , Publisher
   ) where
 
-import           Control.Lens
+import           Control.Lens         ((^.))
 import           Data.Serialize       (Serialize)
-import           GHC.TypeLits
 import           Pipes                (Producer)
-import           Servant
 import           System.ZMQ4.Monadic  (Sub (Sub), ZMQ)
 import qualified System.ZMQ4.Monadic  as ZMQ
 

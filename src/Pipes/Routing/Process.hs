@@ -22,23 +22,24 @@
 {-# OPTIONS_GHC -Wall #-}
 module Pipes.Routing.Process where
 
-import           Control.Concurrent.Async (Async)
+import           Control.Concurrent.Async  (Async)
 import           Control.Lens
-import           Control.Monad.Reader
-import           Data.Generics.Product
-import           Data.Kind
-import           Data.Proxy               (Proxy (..))
-import           Data.Serialize           (Serialize)
-import           GHC.Generics             (Generic)
-import           GHC.TypeLits             (KnownSymbol, Symbol)
-import           Pipes                    hiding (Proxy)
-import qualified Pipes.Prelude            as P
-import           Servant.API
-import           System.ZMQ4.Monadic      as ZMQ
+import           Control.Monad             (void)
+import           Data.Generics.Product     (HasField, getField)
+import           Data.Kind                 (Constraint)
+import           Data.Serialize            (Serialize)
+import           GHC.Generics              (Generic)
+import           Pipes                     (Producer, yield, (>->), lift)
+import qualified Pipes                     as Pipes
+import qualified Pipes.Prelude             as P
+import           System.ZMQ4.Monadic       as ZMQ
 
-import           Pipes.Routing.Ingest
+import           Pipes.Routing.Ingest      (ZMQRouter, recvFrom, retagRouter,
+                                            sendTo)
 import           Pipes.Routing.Types
-import           Pipes.Routing.ZMQ
+import           Pipes.Routing.ZMQ         (nodeChannel, sockPublisher,
+                                            sockPuller, sockPusher,
+                                            sockSubscriber)
 
 
 --------------------------------------------------------------------------------
@@ -91,7 +92,7 @@ mkProcessor zmqRouter pSubChan pFanInChan f = do
   ZMQ.connect push pushConn
   let subP = sockSubscriber sub pSubChan
       pushC = sockPusher push
-  async $ runEffect $ subP >-> P.map f >-> pushC
+  async $ Pipes.runEffect $ subP >-> P.map f >-> pushC
   where
     pushConn = "inproc://" ++ (nodeChannel $ chanP pFanInChan)
 
@@ -152,8 +153,8 @@ instance
     liftIO $ putStrLn ("process faninchan: " ++ (nodeChannel $ chanP pFanInChan))
     let p = sockPuller pFanInChan pull
         pub = sockPublisher sock pFanInChan
-    return $ for p $ \i -> do
-      lift $ runEffect $ (yield i) >-> pub
+    return $ Pipes.for p $ \i -> do
+      lift $ Pipes.runEffect $ (yield i) >-> pub
       yield i
     where
       pJoinChans = Proxy :: Proxy ((ProcessInputs api l))

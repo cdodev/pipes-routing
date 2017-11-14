@@ -31,17 +31,14 @@ module Pipes.Routing.Ingest (
 
 import           Control.Concurrent       (threadDelay)
 import           Control.Concurrent.Async (Async)
-import           Control.Lens
+import           Control.Lens             (makeClassy, (^.))
 import           Control.Monad.IO.Class   (MonadIO, liftIO)
 import           Data.Serialize           (Serialize)
-import           Data.Typeable            (Typeable)
-import           GHC.TypeLits
 import           Pipes                    (Consumer, Producer)
-import           Servant
 import           System.ZMQ4.Monadic      as ZMQ
 
 import           Pipes.Routing.Types
-import           Pipes.Routing.ZMQ
+import           Pipes.Routing.ZMQ        (sockPublisher, sockSubscriber)
 
 
 --------------------------------------------------------------------------------

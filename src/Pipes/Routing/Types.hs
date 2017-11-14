@@ -24,18 +24,19 @@ module Pipes.Routing.Types (
   , ChannelType
   , CombineApis
   , module Servant.API.Alternative
+  , module Data.Typeable
+  , module GHC.TypeLits
   ) where
 
-import           Data.Typeable                (Typeable)
-import           GHC.TypeLits
-import           Servant
-import           Servant.API.Alternative
--- import Data.Kind
 import           Data.Serialize               (Serialize)
-import           Data.Singletons
+import           Data.Singletons              (Apply, SingI, TyFun,
+                                               fromSing, singByProxy)
 import           Data.Singletons.Prelude.List (Map)
-import           Data.Singletons.TH
+import           Data.Singletons.TH           (singletons)
 import           Data.Text                    (Text)
+import           Data.Typeable                (Typeable, Proxy(..))
+import           GHC.TypeLits                 (Symbol, KnownSymbol, symbolVal)
+import           Servant.API.Alternative      ((:<|>) (..))
 
 $(singletons [d|
   data (Serialize a) => (chan :: k) ::: a
