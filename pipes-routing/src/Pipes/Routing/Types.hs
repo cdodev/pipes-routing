@@ -76,7 +76,9 @@ type family ChannelType (chan :: k) api :: * where
 type family CombineApis (l :: *) (r :: *) :: * where
   CombineApis () r = r
   CombineApis l () = l
+  CombineApis (l :<|> lr) r = l :<|> CombineApis lr r
   CombineApis l r  = l :<|> r
+
 --------------------------------------------------------------------------------
 type family ChannelList (api :: k) :: [*] where
   ChannelList (c ::: a) = '[c ::: a]

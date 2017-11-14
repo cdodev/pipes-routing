@@ -25,12 +25,10 @@ module Pipes.Routing.Process where
 import           Control.Concurrent.Async (Async)
 import           Control.Lens
 import           Control.Monad.Reader
-import           Data.Serialize           (Serialize)
--- import Data.Functor.Contravariant
 import           Data.Generics.Product
 import           Data.Kind
 import           Data.Proxy               (Proxy (..))
--- import Data.Kind
+import           Data.Serialize           (Serialize)
 import           GHC.Generics             (Generic)
 import           GHC.TypeLits             (KnownSymbol, Symbol)
 import           Pipes                    hiding (Proxy)
@@ -40,7 +38,7 @@ import           System.ZMQ4.Monadic      as ZMQ
 
 import           Pipes.Routing.Ingest
 import           Pipes.Routing.Types
--- -- import           Pipes.Routing.Publish
+import           Pipes.Routing.ZMQ
 
 
 --------------------------------------------------------------------------------
@@ -48,6 +46,9 @@ type family ProcessInputs (api :: *) (chan :: k) :: [*] where
   ProcessInputs api (a :<+> b) = (a ::: (ChannelType a api)) ': ProcessInputs api b
   ProcessInputs api chan = '[chan ::: ChannelType chan api]
 
+type family ProcessorAPI (processor :: *) :: * where
+  ProcessorAPI (_ :-> (chan ::: a)) = chan ::: a
+  ProcessorAPI (l :<|> r) = ProcessorAPI l :<|> ProcessorAPI r
 
 type family HasSingleField chan record b :: Constraint where
   HasSingleField ((chan :: Symbol) ::: a) record b = HasField chan (a -> b) record
@@ -83,7 +84,7 @@ mkProcessor zmqRouter pSubChan pFanInChan f = do
                       -- ++ (nodeChannel $ chanP pFanInChan)
                       -- ++ " <- "
                       -- ++ (nodeChannel $ chanP pSubChan))
-  let subAddr = zmqRouter ^. ingestSettings.recvFrom
+  let subAddr = zmqRouter ^. recvFrom
   sub <- socket Sub
   ZMQ.connect sub subAddr
   push <- socket Push
@@ -147,7 +148,7 @@ instance
     ZMQ.bind pull pullConn
     void $ runFanin zmqRouter pJoinChans pFanInChan joiner
     sock <- ZMQ.socket Pub -- ZMQ.async (go s)
-    ZMQ.connect sock (zmqRouter ^. ingestSettings.sendTo)
+    ZMQ.connect sock (zmqRouter ^. sendTo)
     liftIO $ putStrLn ("process faninchan: " ++ (nodeChannel $ chanP pFanInChan))
     let p = sockPuller pFanInChan pull
         pub = sockPublisher sock pFanInChan
@@ -169,6 +170,12 @@ instance (HasProcessor api l, HasProcessor api r) => HasProcessor api (l :<|> r)
     where
       pa = process zmqRouter l
       pb = process zmqRouter r
+
+runProcessor
+  :: (HasProcessor api processor) => ZMQRouter api
+     -> JoinerT api processor
+     -> ZMQ z (ZMQRouter (CombineApis api (ProcessorAPI processor)), ProcessorT api processor (ZMQ z))
+runProcessor zmqRouter j = (retagRouter zmqRouter,) <$> process zmqRouter j
 
 
 data IA = IA { int :: Int -> (Int, Int) } deriving Generic
