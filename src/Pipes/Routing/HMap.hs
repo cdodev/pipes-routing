@@ -37,7 +37,6 @@ import           GHC.TypeLits
 import qualified GHC.TypeLits                as Ty
 -- -- -- import           Pipes.Concurrent
 import           Pipes.Routing.Types
-import           Servant.API
 
 data SomeVal f = forall a. Typeable a => I (f a)
 newtype RouteMap (f :: * -> *) (a :: [*]) = Routes { unRoutes :: Map Text (SomeVal f) }
