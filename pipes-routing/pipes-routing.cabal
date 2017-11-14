@@ -16,6 +16,7 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Pipes.Routing.Types
+                       Pipes.Routing.ZMQ
                        Pipes.Routing.Publish
                        Pipes.Routing.Process
                        Pipes.Routing.Ingest
