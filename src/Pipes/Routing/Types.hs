@@ -29,17 +29,17 @@ module Pipes.Routing.Types (
   ) where
 
 import           Data.Serialize               (Serialize)
-import           Data.Singletons              (Apply, SingI, TyFun,
-                                               fromSing, singByProxy)
+import           Data.Singletons              (Apply, SingI, TyFun, fromSing,
+                                               singByProxy)
 import           Data.Singletons.Prelude.List (Map)
 import           Data.Singletons.TH           (singletons)
 import           Data.Text                    (Text)
-import           Data.Typeable                (Typeable, Proxy(..))
-import           GHC.TypeLits                 (Symbol, KnownSymbol, symbolVal)
+import           Data.Typeable                (Proxy (..), Typeable)
+import           GHC.TypeLits                 (KnownSymbol, Symbol, symbolVal)
 import           Servant.API.Alternative      ((:<|>) (..))
 
 $(singletons [d|
-  data (Serialize a) => (chan :: k) ::: a
+  data (chan :: k) ::: a
       deriving (Typeable)
   -- infixr 4 :::
 

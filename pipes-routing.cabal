@@ -23,7 +23,7 @@ library
                        Pipes.Routing.HMap
                        Pipes.Routing
                        Control.Monad.Indexed.State
-  build-depends:       base >= 4.7 && < 5
+  build-depends:       base
                      , async
                      , cereal
                      , pipes
@@ -37,11 +37,10 @@ library
                      , mtl
                      , lens
                      , lifted-base
-                     , pipes-zeromq4
                      , servant
                      , servant-server
                      , servant-client
-                     , singletons >= 2.2
+                     , singletons >= 2.3.1
                      , stm
                      , text
                      , zeromq4-haskell
