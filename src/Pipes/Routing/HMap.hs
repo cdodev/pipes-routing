@@ -23,7 +23,7 @@ import           Control.Lens
 import           Data.Map.Strict             (Map)
 import qualified Data.Map.Strict             as Map
 import           Data.Maybe                  (fromJust)
-import           Data.Promotion.Prelude.List ((:++))
+import           Data.Promotion.Prelude.List (type (++))
 import           Data.Proxy                  (Proxy (..))
 import           Data.Text                   (Text)
 import           Data.Text.Lens              (packed)
@@ -47,7 +47,7 @@ type family RouteElem (r :: *) (routes :: [*]) :: Constraint where
   RouteElem (k ::: i) (k ::: i ': xs) = ()
   RouteElem (k ::: i) (a ': as) = RouteElem (k ::: i) as
 
-type MergedRoutes a b = a :++ b
+type MergedRoutes a b = a ++ b
 
 insert
   :: (KnownSymbol k, Typeable i, ChannelType k api ~ i)

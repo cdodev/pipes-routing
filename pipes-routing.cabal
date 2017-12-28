@@ -40,7 +40,7 @@ library
                      , servant
                      , servant-server
                      , servant-client
-                     , singletons >= 2.3.1
+                     , singletons >= 2.4
                      , stm
                      , text
                      , zeromq4-haskell

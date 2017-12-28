@@ -12,10 +12,11 @@
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE UndecidableInstances      #-}
+{-# LANGUAGE EmptyCase #-}
 {-# OPTIONS_GHC -Wall #-}
 module Pipes.Routing.Types (
     (:::)
-  , (:%::)
+  , type (%:::)
   , chanP
   , (:<+>)
   , (:->)
@@ -28,7 +29,6 @@ module Pipes.Routing.Types (
   , module GHC.TypeLits
   ) where
 
-import           Data.Serialize               (Serialize)
 import           Data.Singletons              (Apply, SingI, TyFun, fromSing,
                                                singByProxy)
 import           Data.Singletons.Prelude.List (Map)
